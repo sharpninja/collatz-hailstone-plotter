@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e0d0b" />
+    <meta
+      name="description"
+      content="Plot Collatz hailstone trajectories from one or more starting numbers. A visualizer only — not a proof."
+    />
+    <title>Hailstone plotter</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23110f0c'/%3E%3Cpath d='M6 23 C10 23 11 9 16 9 C21 9 20 20 26 20' fill='none' stroke='%23e2b657' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 36 36" aria-hidden="true">
+            <rect width="36" height="36" rx="10" fill="#1c1914" />
+            <path
+              d="M7 26 C12 26 13 10 18 10 C23 10 22 22 29 22"
+              fill="none"
+              stroke="#e2b657"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <div>
+            <p class="eyebrow">Collatz · 3n+1</p>
+            <h1>Hailstone plotter</h1>
+          </div>
+        </div>
+        <p class="lede">
+          Step runs along the horizontal axis and the value of n along the vertical. Each curve follows one starting number until it reaches 1.
+        </p>
+      </header>
+
+      <div class="workspace">
+        <aside class="panel">
+          <form id="controls">
+            <div class="field">
+              <label for="seeds">Starting values</label>
+              <textarea
+                id="seeds"
+                rows="3"
+                spellcheck="false"
+                autocapitalize="off"
+                placeholder="27, 12, 19"
+              >27</textarea>
+              <p class="hint">Positive integers, separated by commas or spaces. Up to 12 seeds.</p>
+            </div>
+
+            <div class="examples" role="group" aria-label="Examples">
+              <button type="button" data-example="27">27</button>
+              <button type="button" data-example="25, 26, 27">25, 26, 27</button>
+              <button type="button" data-example="12, 19, 27">12, 19, 27</button>
+            </div>
+
+            <div class="field">
+              <label for="max-steps">Max iterations</label>
+              <input id="max-steps" type="number" inputmode="numeric" min="1" max="200000" step="1" value="10000" />
+              <p class="hint">Safety cap. A run stops at 1, or when it has taken this many steps.</p>
+            </div>
+
+            <label class="check" for="log-scale">
+              <input id="log-scale" type="checkbox" />
+              <span>Logarithmic value axis</span>
+            </label>
+
+            <div class="actions">
+              <button type="submit" class="primary" id="generate">Generate</button>
+              <button type="button" id="download" disabled>Download PNG</button>
+              <button type="button" id="clear">Clear</button>
+            </div>
+            <div id="form-message" class="message" aria-live="polite"></div>
+          </form>
+
+          <section class="legend-block" aria-labelledby="legend-heading">
+            <h2 id="legend-heading">Trajectories</h2>
+            <div id="legend" class="legend"></div>
+          </section>
+
+          <section class="about" aria-labelledby="about-heading">
+            <h2 id="about-heading">About the sequence</h2>
+            <p>If n is even, the next term is n / 2. If n is odd, the next term is 3n + 1. These plots follow that rule until the value is 1. The cycle 4 → 2 → 1 is not repeated.</p>
+            <p>The Collatz conjecture says every positive integer eventually reaches 1. It is still unproved. This page only draws the paths you enter.</p>
+          </section>
+        </aside>
+
+        <section class="stage" aria-label="Chart">
+          <div class="plot-card">
+            <div class="plot-frame">
+              <div id="empty" class="empty">
+                <p class="empty-title">No trajectory yet</p>
+                <p>Enter a starting number and press Generate. 27 is a classic seed: the path climbs to 9,232, then falls to 1.</p>
+              </div>
+              <div id="plot-host" class="plot-host"></div>
+              <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
+            </div>
+            <p class="plot-note">Dots are the sequence. The curve between them is a smooth guide, not extra Collatz terms. Hover a step to read it.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
