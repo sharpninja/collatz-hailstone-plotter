@@ -11,7 +11,14 @@ import {
 import { downloadPng } from './export';
 import './style.css';
 import { formatCount, formatExact } from './format';
-import { MAX_ITERATION_CAP, MAX_SEEDS, TOTAL_STEP_BUDGET, parseMaxIterations, parseSeeds } from './parse';
+import {
+  MAX_ITERATION_CAP,
+  MAX_SEEDS,
+  TOTAL_STEP_BUDGET,
+  parseMaxIterations,
+  parseSeeds,
+  type ParsedSeeds,
+} from './parse';
 
 const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
@@ -26,6 +33,7 @@ const downloadButton = required<HTMLButtonElement>('download');
 const clearButton = required<HTMLButtonElement>('clear');
 
 let trajectories: Trajectory[] | null = null;
+let lastParsed: ParsedSeeds | null = null;
 let view: ChartView | null = null;
 let renderFrame = 0;
 let paintedKey = '';
@@ -36,7 +44,9 @@ form.addEventListener('submit', (event) => {
 });
 
 logInput.addEventListener('change', () => {
-  if (trajectories) scheduleRender();
+  if (!trajectories) return;
+  showStatus();
+  scheduleRender();
 });
 
 downloadButton.addEventListener('click', () => {
@@ -49,6 +59,7 @@ clearButton.addEventListener('click', () => {
   maxInput.value = '10000';
   logInput.checked = false;
   trajectories = null;
+  lastParsed = null;
   view = null;
   paintedKey = '';
   hideTooltip();
@@ -61,8 +72,9 @@ clearButton.addEventListener('click', () => {
 
 for (const button of document.querySelectorAll<HTMLButtonElement>('[data-example]')) {
   button.addEventListener('click', () => {
-    const example = button.dataset.example ?? '';
-    seedsInput.value = example;
+    seedsInput.value = button.dataset.example ?? '';
+    if (button.dataset.log === 'on') logInput.checked = true;
+    if (button.dataset.log === 'off') logInput.checked = false;
     generate();
   });
 }
@@ -128,11 +140,32 @@ function generate(): void {
     return;
   }
 
+  lastParsed = parsed;
   trajectories = parsed.seeds.map((seed) => hailstone(seed, maxIterations));
   downloadButton.disabled = false;
-  setMessage([{ kind: 'ok', text: statusLine(trajectories) }, ...warningParts(parsed, trajectories)]);
+  showStatus();
   renderLegend(trajectories);
   scheduleRender();
+}
+
+function showStatus(): void {
+  if (!trajectories || !lastParsed) return;
+  const parts: Array<{ kind: 'ok' | 'warn' | 'error'; text: string }> = [
+    { kind: 'ok', text: statusLine(trajectories) },
+    ...warningParts(lastParsed, trajectories),
+  ];
+  const hint = scaleHint(trajectories, logInput.checked);
+  if (hint) parts.push({ kind: 'warn', text: hint });
+  setMessage(parts);
+}
+
+function scaleHint(series: Trajectory[], logY: boolean): string | null {
+  if (logY || series.length < 2) return null;
+  const peaks = series.map((trajectory) => peakValue(trajectory.values));
+  const tallest = peaks.reduce((best, peak) => (peak > best ? peak : best));
+  const shortest = peaks.reduce((best, peak) => (peak < best ? peak : best));
+  if (shortest < 1n || tallest / shortest < 40n) return null;
+  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on the logarithmic axis to compare them.';
 }
 
 function scheduleRender(): void {

@@ -49,15 +49,15 @@
                 rows="3"
                 spellcheck="false"
                 autocapitalize="off"
-                placeholder="27, 12, 19"
+                placeholder="e.g. 27, 12, 19"
               >27</textarea>
               <p class="hint">Positive integers, separated by commas or spaces. Up to 12 seeds.</p>
             </div>
 
             <div class="examples" role="group" aria-label="Examples">
-              <button type="button" data-example="27">27</button>
-              <button type="button" data-example="25, 26, 27">25, 26, 27</button>
-              <button type="button" data-example="12, 19, 27">12, 19, 27</button>
+              <button type="button" data-example="27" data-log="off">27</button>
+              <button type="button" data-example="25, 26, 27" data-log="on">25, 26, 27</button>
+              <button type="button" data-example="12, 19, 27" data-log="on">12, 19, 27</button>
             </div>
 
             <div class="field">
@@ -101,7 +101,7 @@
               <div id="plot-host" class="plot-host"></div>
               <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
             </div>
-            <p class="plot-note">Dots are the sequence. The curve between them is a smooth guide, not extra Collatz terms. Hover a step to read it.</p>
+            <p class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
           </div>
         </section>
       </div>

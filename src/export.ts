@@ -65,7 +65,7 @@ export function renderPng(trajectories: Trajectory[], logY: boolean): HTMLCanvas
   context.fillStyle = muted;
   context.font = '15px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
   const axisNote = logY ? 'logarithmic value axis' : 'linear value axis';
-  context.fillText(`Stops at 1 · ${axisNote}. Dots are the sequence; the curve between them is a smooth guide.`, 40, 76);
+  context.fillText(`Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.`, 40, 76);
 
   const legendWidth = trajectories.length > 1 ? 280 : 0;
   const chartX = 24;

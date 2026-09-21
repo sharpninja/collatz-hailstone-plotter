@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLayout, smoothThrough, type Cubic, type Vec } from './chart';
+import { buildLayout, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -121,6 +121,17 @@ describe('buildLayout', () => {
     const layout = buildLayout(series, { width: 800, height: 480, logY: false });
     expect(layout.series.map((item) => item.seed)).toEqual([27n, 12n, 19n]);
     expect(new Set(layout.series.map((item) => item.color)).size).toBe(3);
+  });
+
+  it('reads the sample under the cursor, including the peak of 27', () => {
+    const layout = buildLayout([hailstone(27n, 10_000)], { width: 960, height: 600, logY: false });
+    const peak = layout.series[0].samples.find((sample) => sample.exact === 9232n);
+    expect(peak).toBeDefined();
+    const hit = hitTest(layout, peak!.x + 2, peak!.y - 3);
+    expect(hit?.step).toBe(peak!.step);
+    expect(hit?.entries[0]?.exact).toBe(9232n);
+    expect(hit?.entries[0]?.peak).toBe(true);
+    expect(hitTest(layout, 0, 0)).toBeNull();
   });
 
   it('plots a single point at 1 without a curve', () => {

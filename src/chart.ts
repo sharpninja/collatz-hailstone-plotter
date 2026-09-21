@@ -74,6 +74,8 @@ export interface Layout {
   series: LayoutSeries[];
   xLabel: string;
   yLabel: string;
+  /** Horizontal center of the rotated value-axis title. */
+  yTitleX: number;
 }
 
 export interface ChartPalette {
@@ -259,11 +261,12 @@ export function buildLayout(
 
   const yLabelSource = logY ? yLog.ticks.map((tick) => tick.value) : rangeTicks(0, yLinear.max, yLinear.step);
   const longest = yLabelSource.reduce((length, value) => Math.max(length, formatTick(value).length), 1);
+  const yTitleX = width < 560 ? 14 : 18;
   const padding: Padding = {
     top: 20,
     right: width < 560 ? 16 : 28,
     bottom: 54,
-    left: Math.round(18 + 16 + longest * (width < 560 ? 6.6 : 7.3)),
+    left: Math.round(yTitleX + 30 + longest * (width < 560 ? 6.6 : 7.3)),
   };
 
   const plot = {
@@ -357,7 +360,12 @@ export function buildLayout(
     series,
     xLabel: 'Iteration',
     yLabel: logY ? 'Value (log)' : 'Value',
+    yTitleX,
   };
+}
+
+export function showSampleDot(sample: LayoutSample, count: number): boolean {
+  return sample.peak || sample.start || sample.end || count <= 48;
 }
 
 function declutter<T extends { label: string }>(
@@ -457,11 +465,9 @@ export function renderChart(host: HTMLElement, layout: Layout, summary: string):
   });
   svg.classList.add('chart');
 
-  const title = svgEl('title', {});
-  title.textContent = 'Hailstone trajectories';
   const desc = svgEl('desc', {});
   desc.textContent = summary;
-  svg.append(title, desc);
+  svg.append(desc);
 
   const defs = svgEl('defs', {});
   const clip = svgEl('clipPath', { id: 'series-clip' });
@@ -543,12 +549,14 @@ export function renderChart(host: HTMLElement, layout: Layout, summary: string):
   });
   xTitle.textContent = layout.xLabel;
 
+  const yCenter = layout.plot.y + layout.plot.h / 2;
   const yTitle = svgEl('text', {
-    x: '0',
-    y: '0',
+    x: String(layout.yTitleX),
+    y: String(yCenter),
     class: 'axis-title',
     'text-anchor': 'middle',
-    transform: `translate(16 ${layout.plot.y + layout.plot.h / 2}) rotate(-90)`,
+    'dominant-baseline': 'middle',
+    transform: `rotate(-90 ${layout.yTitleX} ${yCenter})`,
   });
   yTitle.textContent = layout.yLabel;
   axes.append(xTitle, yTitle);
@@ -581,8 +589,7 @@ export function renderChart(host: HTMLElement, layout: Layout, summary: string):
   const markers = svgEl('g', { class: 'markers' });
   for (const series of layout.series) {
     for (const sample of series.samples) {
-      const show = sample.peak || sample.start || sample.end || series.samples.length <= 160;
-      if (!show) continue;
+      if (!showSampleDot(sample, series.samples.length)) continue;
       const radius = sample.peak ? '4.2' : sample.start || sample.end ? '3.2' : '2.15';
       markers.append(
         svgEl('circle', {
@@ -677,7 +684,7 @@ export function paintChart(ctx: CanvasRenderingContext2D, layout: Layout, palett
   ctx.fillText(layout.xLabel, plot.x + plot.w / 2, layout.height - 12);
 
   ctx.save();
-  ctx.translate(16, plot.y + plot.h / 2);
+  ctx.translate(layout.yTitleX, plot.y + plot.h / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.textBaseline = 'middle';
   ctx.fillText(layout.yLabel, 0, 0);
@@ -709,8 +716,7 @@ export function paintChart(ctx: CanvasRenderingContext2D, layout: Layout, palett
 
   for (const series of layout.series) {
     for (const sample of series.samples) {
-      const show = sample.peak || sample.start || sample.end || series.samples.length <= 160;
-      if (!show) continue;
+      if (!showSampleDot(sample, series.samples.length)) continue;
       ctx.beginPath();
       ctx.fillStyle = series.color;
       ctx.arc(sample.x, sample.y, sample.peak ? 4.2 : sample.start || sample.end ? 3.2 : 2.15, 0, Math.PI * 2);
