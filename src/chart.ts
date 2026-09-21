@@ -96,10 +96,15 @@ interface Padding {
 
 /**
  * Uniform Catmull–Rom spline through every sample, as cubic Bézier segments.
- * Control points sit one-sixth of the way toward the neighboring chord, which
- * rounds each turn instead of leaving a polyline. The curve passes through
- * every term; positions between samples are only a reading guide.
+ *
+ * The usual handle length is one sixth of the neighboring chord. Hailstone
+ * steps sit close together on the iteration axis and far apart in value, and
+ * that shorter handle leaves the spikes looking like sharp corners. These
+ * handles are twice as long, which rounds each turn. The curve still passes
+ * through every term; positions between samples are only a reading guide.
  */
+const CATMULL_HANDLE = 3;
+
 export function smoothThrough(points: Vec[]): Cubic[] {
   const curves: Cubic[] = [];
   for (let i = 0; i < points.length - 1; i++) {
@@ -108,10 +113,10 @@ export function smoothThrough(points: Vec[]): Cubic[] {
     const p2 = points[i + 1];
     const p3 = points[i + 2] ?? p2;
     curves.push({
-      c1x: p1.x + (p2.x - p0.x) / 6,
-      c1y: p1.y + (p2.y - p0.y) / 6,
-      c2x: p2.x - (p3.x - p1.x) / 6,
-      c2y: p2.y - (p3.y - p1.y) / 6,
+      c1x: p1.x + (p2.x - p0.x) / CATMULL_HANDLE,
+      c1y: p1.y + (p2.y - p0.y) / CATMULL_HANDLE,
+      c2x: p2.x - (p3.x - p1.x) / CATMULL_HANDLE,
+      c2y: p2.y - (p3.y - p1.y) / CATMULL_HANDLE,
       x: p2.x,
       y: p2.y,
     });
