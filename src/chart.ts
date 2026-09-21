@@ -95,74 +95,28 @@ interface Padding {
 }
 
 /**
- * Monotone piecewise-cubic (Fritsch–Butland / PCHIP) through every sample,
- * written as cubic Bézier segments.
- *
- * Slopes are zero at local peaks and valleys, so the curve cannot invent a
- * higher crest than the sequence actually reaches. Between samples the bend
- * is only a reading guide — those positions are not Collatz terms.
+ * Uniform Catmull–Rom spline through every sample, as cubic Bézier segments.
+ * Control points sit one-sixth of the way toward the neighboring chord, which
+ * rounds each turn instead of leaving a polyline. The curve passes through
+ * every term; positions between samples are only a reading guide.
  */
 export function smoothThrough(points: Vec[]): Cubic[] {
-  const n = points.length;
-  if (n < 2) return [];
-
-  const h: number[] = [];
-  const delta: number[] = [];
-  for (let i = 0; i < n - 1; i++) {
-    const dx = points[i + 1].x - points[i].x;
-    const dy = points[i + 1].y - points[i].y;
-    h.push(dx);
-    delta.push(dx === 0 ? 0 : dy / dx);
-  }
-
-  const slopes = new Array<number>(n).fill(0);
-  if (n === 2) {
-    slopes[0] = delta[0];
-    slopes[1] = delta[0];
-  } else {
-    for (let i = 1; i < n - 1; i++) {
-      const left = delta[i - 1];
-      const right = delta[i];
-      if (left === 0 || right === 0 || left * right < 0) {
-        slopes[i] = 0;
-      } else {
-        const h0 = h[i - 1];
-        const h1 = h[i];
-        const w1 = 2 * h1 + h0;
-        const w2 = h1 + 2 * h0;
-        slopes[i] = (w1 + w2) / (w1 / left + w2 / right);
-      }
-    }
-    slopes[0] = endSlope(h[0], h[1], delta[0], delta[1]);
-    slopes[n - 1] = endSlope(h[n - 2], h[n - 3], delta[n - 2], delta[n - 3]);
-  }
-
   const curves: Cubic[] = [];
-  for (let i = 0; i < n - 1; i++) {
-    const p0 = points[i];
-    const p1 = points[i + 1];
-    const dx = h[i];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
     curves.push({
-      c1x: p0.x + dx / 3,
-      c1y: p0.y + (slopes[i] * dx) / 3,
-      c2x: p1.x - dx / 3,
-      c2y: p1.y - (slopes[i + 1] * dx) / 3,
-      x: p1.x,
-      y: p1.y,
+      c1x: p1.x + (p2.x - p0.x) / 6,
+      c1y: p1.y + (p2.y - p0.y) / 6,
+      c2x: p2.x - (p3.x - p1.x) / 6,
+      c2y: p2.y - (p3.y - p1.y) / 6,
+      x: p2.x,
+      y: p2.y,
     });
   }
   return curves;
-}
-
-function endSlope(h0: number, h1: number, d0: number, d1: number): number {
-  const denom = h0 + h1;
-  if (denom === 0) return 0;
-  const slope = ((2 * h0 + h1) * d0 - h0 * d1) / denom;
-  if (!(slope * d0 > 0)) return 0;
-  if (Math.sign(d0) !== Math.sign(d1) && Math.abs(slope) > 3 * Math.abs(d0)) {
-    return 3 * d0;
-  }
-  return slope;
 }
 
 function niceStep(span: number): number {

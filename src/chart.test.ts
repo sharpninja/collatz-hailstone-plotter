@@ -54,7 +54,7 @@ describe('smoothThrough', () => {
     }
   });
 
-  it('does not rise above a local peak', () => {
+  it('rounds a steep crest instead of a straight corner', () => {
     const points = [
       { x: 0, y: 0 },
       { x: 1, y: 4 },
@@ -62,9 +62,14 @@ describe('smoothThrough', () => {
       { x: 3, y: 6 },
       { x: 4, y: 1 },
     ];
-    for (const point of samples(points, 12)) {
-      expect(point.y).toBeLessThanOrEqual(20 + 1e-6);
-    }
+    const drawn = samples(points, 12);
+    const crest = Math.max(...drawn.map((point) => point.y));
+    expect(crest).toBeGreaterThanOrEqual(20);
+    expect(crest).toBeLessThan(24);
+    const intoPeak = smoothThrough(points)[1];
+    const mid = at(points[1], intoPeak, 0.5);
+    const chordY = (points[1].y + points[2].y) / 2;
+    expect(Math.abs(mid.y - chordY)).toBeGreaterThan(1);
   });
 
   it('rounds a sharp peak instead of connecting it with a corner only', () => {
@@ -102,6 +107,20 @@ describe('buildLayout', () => {
     });
     const highest = Math.min(...series.samples.map((sample) => sample.y));
     expect(peak!.y).toBeCloseTo(highest, 5);
+    const deviations = series.curves.map((curve, index) => {
+      const start = series.samples[index];
+      let worst = 0;
+      for (const t of [0.25, 0.5, 0.75]) {
+        const point = at(start, curve, t);
+        const chordX = start.x + t * (curve.x - start.x);
+        const chordY = start.y + t * (curve.y - start.y);
+        worst = Math.max(worst, Math.hypot(point.x - chordX, point.y - chordY));
+      }
+      return worst;
+    });
+    deviations.sort((a, b) => a - b);
+    const p90 = deviations[Math.floor(0.9 * (deviations.length - 1))];
+    expect(p90).toBeGreaterThan(8);
   });
 
   it('keeps the same vertical order on a log axis', () => {

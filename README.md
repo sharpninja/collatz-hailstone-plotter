@@ -41,7 +41,7 @@ No server, account, or database is involved. After `npm install`, the app is ful
 - **Download PNG.** Saves the current plot, including axes and, when several seeds are shown, a legend.
 - **Clear.** Empties the form and the chart.
 
-The curve is a monotone piecewise cubic (Fritsch–Butland / PCHIP), drawn as cubic Bézier segments. It passes through every sample and does not invent a peak higher than the sequence. Positions between the dots are interpolation only.
+The curve is a Catmull–Rom spline, drawn as cubic Bézier segments, so each turn is rounded instead of a straight corner. It passes through every sample. Positions between the dots are interpolation only and may bow slightly on a sharp spike; the dots themselves are the sequence.
 
 Sequences are computed with arbitrary-size integers. A term past 2^53 − 1 is still drawn, but its height is approximate, and the chart says so. A term that would exceed about 10^308 stops the run instead of leaving the chart.
 
