@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { hailstone } from './collatz';
 import { isOddPrimePower } from './parse';
 import {
+  LEFT_HAND_ROLL,
   MIDI_LOW,
   cadenceIndex,
   isPowerOfTwo,
+  leftHandRoll,
   midiForValue,
   schedulePlan,
   scoreTrajectory,
@@ -56,19 +58,29 @@ describe('trajectory score', () => {
     expect(cadenceIndex(hailstone(9n, 100).values)).toBeLessThan(score.notes.length);
   });
 
-  it('offsets only the left hand, and puts both hands together on powers of 2', () => {
+  it('rolls the left hand after the beat and rests both hands together on powers of 2', () => {
     const score = scoreTrajectory(hailstone(27n, 10_000));
     const plan = schedulePlan(score, 200, { right: true, left: true });
-    const left = plan.find((note) => note.kind === 'left' && note.midi === score.notes[1].midi);
-    expect(left?.time).toBeCloseTo(1 * 0.2 + 0.1);
+    const step = 0.2;
+    const roll = plan.filter((note) => note.kind === 'left' && note.time > step && note.time < step * 2);
+    expect(roll.map((note) => note.time)).toEqual(LEFT_HAND_ROLL.map((fraction) => step + fraction * step));
+    expect(roll.map((note) => note.midi)).toEqual(leftHandRoll(score.notes[1].midi));
+    expect(roll[0].time).toBeGreaterThan(step);
+    expect(roll[2].time).toBeLessThan(step * 2);
+    expect(roll[2].midi).toBe(score.notes[1].midi);
     const right = plan.find((note) => note.kind === 'right' && note.time === 0);
-    expect(right?.kind).toBe('right');
-    const unison = plan.filter((note) => note.time === (score.notes.length - 1) * 0.2);
+    expect(right?.midi).toBe(score.notes[0].midi);
+    expect(right?.settle).toBe(false);
+    const unison = plan.filter((note) => note.time === (score.notes.length - 1) * step);
     expect(unison.map((note) => note.kind).sort()).toEqual(['left', 'right']);
+    expect(unison.every((note) => note.settle && note.ring)).toBe(true);
     expect(new Set(unison.map((note) => note.midi)).size).toBe(1);
     const rightOnly = schedulePlan(score, 200, { right: true, left: false });
     expect(rightOnly.every((note) => note.kind === 'right')).toBe(true);
-    expect(rightOnly.some((note) => note.time === (score.notes.length - 1) * 0.2)).toBe(true);
+    expect(rightOnly.some((note) => note.time === (score.notes.length - 1) * step)).toBe(true);
+    const other = score.notes.find((note) => note.hand === 'left' && note.midi !== score.notes[1].midi);
+    expect(other).toBeDefined();
+    expect(leftHandRoll(other!.midi)).not.toEqual(leftHandRoll(score.notes[1].midi));
   });
 
   it('treats 1 as a power of two and 9 as not', () => {

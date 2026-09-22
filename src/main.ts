@@ -58,7 +58,7 @@ const playerRoot = required<HTMLDivElement>('player');
 const player = new TrajectoryPlayer();
 
 const PLAY_HINT =
-  'Play sounds one seed. Right hand hits odd-exponent prime powers, a little louder. Left hand plays the other terms half a step later, softer. Final powers of 2 meet in unison and walk down to 1. Pitch is log₂ of the value, on a C-major pentatonic from C2 to C6. Exploratory, not a proof.';
+  'Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Final powers of 2 land together and settle down to 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';

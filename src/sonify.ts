@@ -15,8 +15,12 @@ export const MAX_PLAY_STEPS = 2_000;
 export const STEP_MS_DEFAULT = 140;
 export const STEP_MS_MIN = 40;
 export const STEP_MS_MAX = 600;
-/** Left hand lags by half a step, the /2 offset. Cadence notes ignore this. */
-export const LEFT_HAND_LAG = 0.5;
+/**
+ * Where the left-hand roll sits inside a step, after the downbeat.
+ * Low note, a fifth above it, then the pitch of this term. The right hand
+ * keeps the downbeat, so the roll is accompaniment rather than the motif.
+ */
+export const LEFT_HAND_ROLL = [0.16, 0.42, 0.68] as const;
 
 const PENTATONIC = [0, 2, 4, 7, 9];
 
@@ -89,6 +93,16 @@ export function scoreTrajectory(trajectory: Trajectory, maxSteps = MAX_PLAY_STEP
   };
 }
 
+/**
+ * Original left-hand roll for one term: an octave below when it fits, a fifth
+ * above that bass note, then the term's own pitch. Not a borrowed melody.
+ */
+export function leftHandRoll(midi: number): [number, number, number] {
+  const bass = Math.max(MIDI_LOW, midi - 12);
+  const fifth = nearestPentatonic(Math.min(MIDI_HIGH, bass + 7));
+  return [bass, fifth, midi];
+}
+
 export function clampStepMs(value: number): number {
   if (!Number.isFinite(value)) return STEP_MS_DEFAULT;
   return Math.min(STEP_MS_MAX, Math.max(STEP_MS_MIN, Math.round(value)));
@@ -140,6 +154,8 @@ interface LiveNote {
   time: number;
   midi: number;
   kind: 'right' | 'left';
+  /** Closing powers of 2: both hands together, softer, no roll. */
+  settle: boolean;
   ring: boolean;
 }
 
@@ -149,19 +165,29 @@ export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): Li
   for (const note of score.notes) {
     const ring = note.value === 1n;
     if (note.hand === 'right' && hands.right) {
-      plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', ring });
+      plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: false, ring: false });
     } else if (note.hand === 'left' && hands.left) {
-      plan.push({ time: note.step * stepSec + LEFT_HAND_LAG * stepSec, midi: note.midi, kind: 'left', ring });
+      const roll = leftHandRoll(note.midi);
+      LEFT_HAND_ROLL.forEach((fraction, index) => {
+        plan.push({
+          time: note.step * stepSec + fraction * stepSec,
+          midi: roll[index],
+          kind: 'left',
+          settle: false,
+          ring: false,
+        });
+      });
     } else if (note.hand === 'both') {
-      if (hands.right) plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', ring });
-      if (hands.left) plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'left', ring });
+      if (hands.right) plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: true, ring });
+      if (hands.left) plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'left', settle: true, ring });
     }
   }
   return plan;
 }
 
-const RIGHT_PARTIALS = [1, 0.62, 0.38, 0.22, 0.12, 0.06];
-const LEFT_PARTIALS = [1, 0.28, 0.1, 0.04];
+const RIGHT_PARTIALS = [1, 0.48, 0.22, 0.1, 0.04];
+const LEFT_PARTIALS = [1, 0.22, 0.06];
+const REST_PARTIALS = [1, 0.3, 0.08];
 
 export interface PlayerHooks {
   onFrame?: (frame: { step: number; steps: number; level: number }) => void;
@@ -213,8 +239,8 @@ export class TrajectoryPlayer {
       let last = start;
       for (const note of plan) {
         const at = start + note.time;
-        this.strike(ctx, at, note.midi, note.kind, note.ring);
-        const release = note.ring ? 2.4 : note.kind === 'right' ? 0.72 : 0.55;
+        this.strike(ctx, at, note.midi, note.kind, note.settle, note.ring);
+        const release = note.ring ? 2.8 : note.settle ? 1.15 : note.kind === 'right' ? 0.48 : 0.34;
         if (at + release > last) last = at + release;
       }
       this.startedAt = start;
@@ -276,14 +302,21 @@ export class TrajectoryPlayer {
     return ctx;
   }
 
-  private strike(ctx: AudioContext, time: number, midi: number, kind: 'right' | 'left', ring: boolean): void {
+  private strike(
+    ctx: AudioContext,
+    time: number,
+    midi: number,
+    kind: 'right' | 'left',
+    settle: boolean,
+    ring: boolean,
+  ): void {
     const master = this.master;
     if (!master) return;
     const freq = 440 * 2 ** ((midi - 69) / 12);
-    const partials = kind === 'right' ? RIGHT_PARTIALS : LEFT_PARTIALS;
-    const peak = kind === 'right' ? 0.2 : 0.075;
-    const attack = kind === 'right' ? 0.006 : 0.018;
-    const decay = ring ? 2.2 : kind === 'right' ? 0.62 : 0.48;
+    const partials = settle ? REST_PARTIALS : kind === 'right' ? RIGHT_PARTIALS : LEFT_PARTIALS;
+    const peak = ring ? 0.07 : settle ? (kind === 'right' ? 0.11 : 0.05) : kind === 'right' ? 0.2 : 0.04;
+    const attack = settle ? 0.03 : kind === 'right' ? 0.004 : 0.012;
+    const decay = ring ? 2.6 : settle ? 0.95 : kind === 'right' ? 0.38 : 0.26;
     const amp = ctx.createGain();
     amp.gain.setValueAtTime(0.0001, time);
     amp.gain.exponentialRampToValueAtTime(peak, time + attack);
@@ -301,7 +334,7 @@ export class TrajectoryPlayer {
       osc.stop(time + attack + decay + 0.02);
       this.sources.push(osc);
     });
-    this.hammer(ctx, time, kind === 'right' ? 0.045 : 0.02);
+    if (!settle) this.hammer(ctx, time, kind === 'right' ? 0.05 : 0.012);
   }
 
   private hammer(ctx: AudioContext, time: number, gain: number): void {
