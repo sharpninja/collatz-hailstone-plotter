@@ -745,6 +745,7 @@ function fitLayer(fits: FitPolyline[]): SVGGElement {
     layer.append(
       svgEl('path', { d: path, class: 'fit-halo' }),
       svgEl('path', { d: path, class: 'fit-line', stroke: fit.color }),
+      svgEl('path', { d: path, class: 'fit-stitch' }),
     );
   }
   return layer;
@@ -773,13 +774,18 @@ function paintFits(ctx: CanvasRenderingContext2D, fits: FitPolyline[], halo: str
     tracePolyline(ctx, fit.points);
     ctx.setLineDash([]);
     ctx.strokeStyle = halo;
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6.5;
     ctx.stroke();
     tracePolyline(ctx, fit.points);
-    ctx.setLineDash([6, 5]);
+    ctx.setLineDash([7, 7]);
+    ctx.lineDashOffset = 0;
     ctx.strokeStyle = fit.color;
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 2.2;
     ctx.stroke();
+    ctx.lineDashOffset = 7;
+    ctx.strokeStyle = '#f4efe6';
+    ctx.stroke();
+    ctx.lineDashOffset = 0;
   }
   ctx.restore();
 }

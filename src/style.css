@@ -379,16 +379,18 @@ button:disabled {
 
 .hover-dot { stroke: #f4efe6; stroke-width: 1.5; }
 
-.fit-halo, .fit-line {
+.fit-halo, .fit-line, .fit-stitch {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
 }
 
-.fit-halo { stroke: var(--bg-plot); stroke-width: 5; }
+.fit-halo { stroke: var(--bg-plot); stroke-width: 6.5; }
 
-.fit-line { stroke-width: 1.8; stroke-dasharray: 6 5; }
+.fit-line, .fit-stitch { stroke-width: 2.2; stroke-dasharray: 7 7; }
+
+.fit-stitch { stroke: #f4efe6; stroke-dashoffset: 7; }
 
 .tooltip {
   position: absolute;
