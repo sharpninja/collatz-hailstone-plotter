@@ -201,10 +201,20 @@ textarea { resize: vertical; min-height: 76px; }
 
 .actions button:not(.primary) { flex: 1; }
 
-button:disabled,
-input:disabled {
+button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+input:disabled {
+  color: var(--faint);
+  background: #0c0b09;
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+.field:has(input:disabled) > label {
+  color: var(--faint);
 }
 
 .message { margin-top: 12px; display: grid; gap: 6px; }
