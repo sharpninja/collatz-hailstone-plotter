@@ -441,6 +441,7 @@ button:disabled {
 
 .sample-dot, .peak-dot { stroke: #141210; stroke-width: 1; }
 .peak-dot { stroke-width: 1.5; }
+.beat-dot { fill: none; stroke-width: 1.75; }
 
 .hover-guide {
   stroke: rgba(244, 239, 230, 0.4);

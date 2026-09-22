@@ -27,6 +27,7 @@ const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
 const logInput = required<HTMLInputElement>('log-scale');
 const alignInput = required<HTMLInputElement>('align-plots');
+const beatsInput = required<HTMLInputElement>('mark-beats');
 const form = required<HTMLFormElement>('controls');
 const message = required<HTMLDivElement>('form-message');
 const legend = required<HTMLDivElement>('legend');
@@ -50,6 +51,8 @@ const PLOT_NOTE_FIT =
   'The curve passes through every term. The dashed line is only a visual fit of those samples. The sidebar gives the exact form in N for each seed’s parity pattern. Hover a step to read a term.';
 const PLOT_NOTE_EXACT =
   'The curve passes through every term. The sidebar gives the exact form in N for this seed’s parity pattern. Hover a step to read a term.';
+const BEAT_NOTE =
+  'Rings mark beats: terms that are prime powers with an odd exponent. The terms between them are the rest of the path.';
 
 interface FitOutcome {
   seed: bigint;
@@ -90,9 +93,15 @@ alignInput.addEventListener('change', () => {
   scheduleRender();
 });
 
+beatsInput.addEventListener('change', () => {
+  applyPlotNote();
+  if (!trajectories) return;
+  scheduleRender();
+});
+
 downloadButton.addEventListener('click', () => {
   if (!trajectories || trajectories.length === 0) return;
-  downloadPng(trajectories, logInput.checked, pngFits(fits), alignInput.checked);
+  downloadPng(trajectories, logInput.checked, pngFits(fits), alignInput.checked, beatsInput.checked);
 });
 
 fitButton.addEventListener('click', () => {
@@ -304,7 +313,7 @@ function render(): void {
   const width = Math.floor(plotHost.clientWidth);
   const height = Math.floor(plotHost.clientHeight);
   if (width < 40 || height < 40) return;
-  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${alignInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
+  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${alignInput.checked ? 1 : 0}|${beatsInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
   if (key === paintedKey && view) return;
   paintedKey = key;
   hideTooltip();
@@ -318,7 +327,7 @@ function render(): void {
   const summary = alignInput.checked
     ? `${statusLine(trajectories)} Axes show each path’s progress and share of its peak.`
     : statusLine(trajectories);
-  view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)));
+  view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)), beatsInput.checked);
 }
 
 function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
@@ -356,7 +365,12 @@ function resetFit(): void {
   fits = null;
   fitBlock.hidden = true;
   fitResults.replaceChildren();
-  plotNote.textContent = PLOT_NOTE;
+  applyPlotNote();
+}
+
+function applyPlotNote(): void {
+  const base = !fits || fits.length === 0 ? PLOT_NOTE : fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE_EXACT;
+  plotNote.textContent = beatsInput.checked ? `${base} ${BEAT_NOTE}` : base;
 }
 
 function renderFitPanel(): void {
@@ -366,7 +380,7 @@ function renderFitPanel(): void {
     return;
   }
   fitBlock.hidden = false;
-  plotNote.textContent = fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE_EXACT;
+  applyPlotNote();
   if (lastParsed?.primeOnly && fits.length > 1) {
     const forms = groupParityForms(fits.map((fit) => fit.parity));
     fitResults.append(
@@ -699,6 +713,12 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
       const tag = document.createElement('span');
       tag.className = 'tip-peak';
       tag.textContent = 'peak';
+      value.append(document.createTextNode(' '), tag);
+    }
+    if (entry.beat) {
+      const tag = document.createElement('span');
+      tag.className = 'tip-peak';
+      tag.textContent = 'beat';
       value.append(document.createTextNode(' '), tag);
     }
     item.append(swatch, seed, value);

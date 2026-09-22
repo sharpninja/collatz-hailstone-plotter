@@ -80,6 +80,12 @@
             </label>
             <p class="hint">Stretch each path to its own length and peak. Off keeps true iterations and Collatz values on one shared pair of axes.</p>
 
+            <label class="check" for="mark-beats">
+              <input id="mark-beats" type="checkbox" checked />
+              <span>Mark beats</span>
+            </label>
+            <p class="hint">Rings mark terms that are prime powers with an odd exponent. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
+
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
               <button type="button" id="fit" disabled>Identify function</button>

@@ -53,6 +53,7 @@ export function renderPng(
   logY: boolean,
   fits: PngFit[] = [],
   align = false,
+  markBeats = true,
 ): HTMLCanvasElement {
   const scale = 2;
   const canvas = document.createElement('canvas');
@@ -85,8 +86,9 @@ export function renderPng(
       ? 'logarithmic value axis'
       : 'linear value axis';
   const fitNote = fits.length > 0 ? ' Dashed curve: visual fit of the samples.' : '';
+  const beatNote = markBeats ? ' Rings mark odd-exponent prime powers.' : '';
   context.fillText(
-    `Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.${fitNote}`,
+    `Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.${fitNote}${beatNote}`,
     40,
     76,
   );
@@ -105,7 +107,7 @@ export function renderPng(
   const overlays: FitPolyline[] = buildFitPolylines(layout, fits);
   context.save();
   context.translate(chartX, chartY);
-  paintChart(context, layout, palette(), overlays);
+  paintChart(context, layout, palette(), overlays, markBeats);
   context.restore();
 
   if (legendWidth) {
@@ -164,8 +166,14 @@ function roundRect(
   ctx.closePath();
 }
 
-export function downloadPng(trajectories: Trajectory[], logY: boolean, fits: PngFit[] = [], align = false): void {
-  const canvas = renderPng(trajectories, logY, fits, align);
+export function downloadPng(
+  trajectories: Trajectory[],
+  logY: boolean,
+  fits: PngFit[] = [],
+  align = false,
+  markBeats = true,
+): void {
+  const canvas = renderPng(trajectories, logY, fits, align, markBeats);
   canvas.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

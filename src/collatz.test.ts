@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hailstone, peakValue } from './collatz';
-import { parseMaxIterations, parseSeeds } from './parse';
+import { isOddPrimePower, parseMaxIterations, parseSeeds } from './parse';
 
 describe('hailstone', () => {
   it('stops immediately at 1', () => {
@@ -383,6 +383,24 @@ describe('parseSeeds', () => {
     expect(parseSeeds('oddprimepowers:14348907..14348907').seeds).toEqual([14348907n]);
     expect(parseSeeds('oddprimepowers:0..10, 3').rejected).toEqual(['oddprimepowers:0..10']);
     expect(parseSeeds('oddprimepowers:0..10, 3').seeds).toEqual([3n]);
+  });
+});
+
+describe('isOddPrimePower', () => {
+  it('keeps odd exponents, including primes, and drops even exponents', () => {
+    expect(isOddPrimePower(27n)).toBe(true);
+    expect(isOddPrimePower(3n)).toBe(true);
+    expect(isOddPrimePower(8n)).toBe(true);
+    expect(isOddPrimePower(32n)).toBe(true);
+    expect(isOddPrimePower(2n)).toBe(true);
+    expect(isOddPrimePower(125n)).toBe(true);
+    expect(isOddPrimePower(9n)).toBe(false);
+    expect(isOddPrimePower(25n)).toBe(false);
+    expect(isOddPrimePower(4n)).toBe(false);
+    expect(isOddPrimePower(16n)).toBe(false);
+    expect(isOddPrimePower(36n)).toBe(false);
+    expect(isOddPrimePower(1n)).toBe(false);
+    expect(isOddPrimePower(6n)).toBe(false);
   });
 });
 

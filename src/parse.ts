@@ -664,8 +664,11 @@ function scanMatching(
   return { values, finished: current > hi };
 }
 
-function isOddPrimePower(n: bigint): boolean {
+/** p^k with k odd, including primes (k = 1). Even exponents and other composites are not. */
+export function isOddPrimePower(n: bigint): boolean {
   if (n < 2n) return false;
+  if ((n & (n - 1n)) === 0n) return ((n.toString(2).length - 1) & 1) === 1;
+  if ((n & 1n) === 0n) return false;
   if (isPrime(n)) return true;
   return isOddHigherPrimePower(n);
 }

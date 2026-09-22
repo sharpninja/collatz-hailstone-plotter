@@ -1,5 +1,6 @@
 import { exceedsSafeInteger, peakValue, type Trajectory } from './collatz';
 import { formatTick } from './format';
+import { isOddPrimePower } from './parse';
 
 export const SERIES_COLORS = [
   '#e2b657',
@@ -39,6 +40,8 @@ export interface LayoutSample {
   peak: boolean;
   start: boolean;
   end: boolean;
+  /** Odd-exponent prime power: a beat on this reading of the curve. */
+  beat: boolean;
 }
 
 export interface LayoutSeries {
@@ -327,6 +330,7 @@ export function buildLayout(
         peak: exact === peak,
         start: step === 0,
         end: step === trajectory.values.length - 1,
+        beat: isOddPrimePower(exact),
       };
     });
     return {
@@ -391,6 +395,7 @@ export interface HoverHit {
     x: number;
     y: number;
     peak: boolean;
+    beat: boolean;
     step: number;
   }>;
 }
@@ -416,6 +421,7 @@ export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
         x: sample.x,
         y: sample.y,
         peak: sample.peak,
+        beat: sample.beat,
         step: sample.step,
       });
     }
@@ -444,6 +450,7 @@ export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
       x: sample.x,
       y: sample.y,
       peak: sample.peak,
+      beat: sample.beat,
       step: sample.step,
     });
   }
@@ -532,9 +539,11 @@ export function renderChart(
   layout: Layout,
   summary: string,
   fits: FitPolyline[] = [],
+  markBeats = true,
 ): ChartView {
   host.replaceChildren();
-  const label = fits.length > 0 ? `${summary} A dashed curve shows a least-squares fit.` : summary;
+  const beatNote = markBeats ? ' Rings mark odd-exponent prime powers.' : '';
+  const label = `${fits.length > 0 ? `${summary} A dashed curve shows a least-squares fit.` : summary}${beatNote}`;
   const svg = svgEl('svg', {
     viewBox: `0 0 ${layout.width} ${layout.height}`,
     width: String(layout.width),
@@ -681,6 +690,19 @@ export function renderChart(
         }),
       );
     }
+    if (!markBeats) continue;
+    for (const sample of series.samples) {
+      if (!sample.beat) continue;
+      markers.append(
+        svgEl('circle', {
+          cx: String(sample.x),
+          cy: String(sample.y),
+          r: '6.4',
+          stroke: series.color,
+          class: 'beat-dot',
+        }),
+      );
+    }
   }
   svg.append(markers);
 
@@ -720,6 +742,7 @@ export function paintChart(
   layout: Layout,
   palette: ChartPalette,
   fits: FitPolyline[] = [],
+  markBeats = true,
 ): void {
   const { plot } = layout;
   ctx.save();
@@ -807,6 +830,15 @@ export function paintChart(
       ctx.fillStyle = series.color;
       ctx.arc(sample.x, sample.y, sample.peak ? 4.2 : sample.start || sample.end ? 3.2 : 2.15, 0, Math.PI * 2);
       ctx.fill();
+    }
+    if (!markBeats) continue;
+    ctx.strokeStyle = series.color;
+    ctx.lineWidth = 1.75;
+    for (const sample of series.samples) {
+      if (!sample.beat) continue;
+      ctx.beginPath();
+      ctx.arc(sample.x, sample.y, 6.4, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
   ctx.restore();
