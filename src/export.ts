@@ -1,5 +1,5 @@
 import { peakValue, type Trajectory } from './collatz';
-import { buildFitPolylines, buildLayout, paintChart, type ChartPalette, type FitPolyline } from './chart';
+import { LEGEND_ROW_LIMIT, buildFitPolylines, buildLayout, paintChart, type ChartPalette, type FitPolyline } from './chart';
 import { formatCount, formatExact } from './format';
 
 const PAGE_W = 1440;
@@ -134,6 +134,7 @@ const LEGEND_HEADER = 26;
 
 function legendWidthFor(count: number): number {
   if (count <= 1) return 0;
+  if (count > LEGEND_ROW_LIMIT) return 168;
   if (count <= 12) return 280;
   return legendColumns(count) * COMPACT_COLUMN + 12;
 }
@@ -162,6 +163,13 @@ function drawSeedLegend(
   context.fillStyle = box.accent;
   context.fillText('Seeds', box.x, box.y + 12);
   const originY = box.y + LEGEND_HEADER;
+
+  if (trajectories.length > LEGEND_ROW_LIMIT) {
+    context.fillStyle = box.text;
+    context.font = '14px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
+    context.fillText(`${formatCount(trajectories.length)} seeds`, box.x, originY + 16);
+    return;
+  }
 
   if (trajectories.length <= 12) {
     trajectories.forEach((trajectory, index) => {

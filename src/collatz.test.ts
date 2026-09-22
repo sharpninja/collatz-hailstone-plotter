@@ -172,8 +172,14 @@ describe('parseSeeds', () => {
     expect(trimmed.seeds[14]).toBe(15n);
     expect(trimmed.omitted).toBe(5);
 
-    expect(parseSeeds('1..600', MAX_SEEDS_LIMIT + 50).overflow).toBe(600n);
-    expect(parseSeeds('1..600', MAX_SEEDS_LIMIT + 50).seeds).toEqual([]);
+    const pastLimit = MAX_SEEDS_LIMIT + 100;
+    expect(parseSeeds(`1..${pastLimit}`, MAX_SEEDS_LIMIT + 50).overflow).toBe(BigInt(pastLimit));
+    expect(parseSeeds(`1..${pastLimit}`, MAX_SEEDS_LIMIT + 50).seeds).toEqual([]);
+    const many = parseSeeds('1..768', 768);
+    expect(many.overflow).toBeNull();
+    expect(many.seeds).toHaveLength(768);
+    expect(many.seeds[0]).toBe(1n);
+    expect(many.seeds[767]).toBe(768n);
     expect(parseSeeds('primes:1..200', 50).seeds).toHaveLength(46);
     expect(parseSeeds('primes:1..200').overflow).toBe(46n);
   });
@@ -526,6 +532,7 @@ describe('parseMaxSeeds', () => {
   it('accepts a whole number from 1 through the control limit', () => {
     expect(parseMaxSeeds(String(MAX_SEEDS))).toBe(MAX_SEEDS);
     expect(parseMaxSeeds('31')).toBe(31);
+    expect(parseMaxSeeds('768')).toBe(768);
     expect(parseMaxSeeds(String(MAX_SEEDS_LIMIT))).toBe(MAX_SEEDS_LIMIT);
     expect(parseMaxSeeds('0')).toBeNull();
     expect(parseMaxSeeds(String(MAX_SEEDS_LIMIT + 1))).toBeNull();

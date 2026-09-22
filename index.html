@@ -75,8 +75,8 @@
 
             <div class="field">
               <label for="max-seeds">Max seeds to plot</label>
-              <input id="max-seeds" type="number" inputmode="numeric" min="1" max="500" step="1" value="12" />
-              <p class="hint">Default 12. Raise this to plot a larger range, up to 500 — for example an odd-prime-power span of 31 seeds. More curves share the 500,000-step budget and take longer to draw. Colors repeat after the twelfth curve. The Hearing menu lists every plotted seed.</p>
+              <input id="max-seeds" type="number" inputmode="numeric" min="1" max="50000" step="1" value="12" />
+              <p class="hint">Default 12. Raise this to plot a larger range, up to 50,000 — for example 1..768. Above 2,000 the page warns that drawing will be slow. More curves share the 500,000-step budget and take longer to draw. Colors repeat after the twelfth curve. Past 30 seeds the trajectory list collapses to a count. The Hearing menu lists every plotted seed.</p>
             </div>
 
             <label class="check" for="log-scale">

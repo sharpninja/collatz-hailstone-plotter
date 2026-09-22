@@ -573,6 +573,15 @@ input:disabled {
 .series-line { stroke-width: 2.25; }
 .series-glow { stroke-width: 7; stroke-opacity: 0.22; }
 
+.chart-many .series-line { stroke-width: 1.15; stroke-opacity: 0.55; }
+.chart-many .series-glow { stroke-width: 2.5; stroke-opacity: 0.08; }
+
+.legend-summary {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+}
+
 .sample-dot, .peak-dot { stroke: #141210; stroke-width: 1; }
 .peak-dot { stroke-width: 1.5; }
 .beat-dot { fill: none; stroke-width: 1.75; }

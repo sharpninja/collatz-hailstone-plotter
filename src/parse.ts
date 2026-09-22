@@ -1,6 +1,8 @@
 export const MAX_SEEDS = 12;
 /** Highest value the Max seeds control accepts. */
-export const MAX_SEEDS_LIMIT = 500;
+export const MAX_SEEDS_LIMIT = 50_000;
+/** Chosen caps above this still plot, and the page warns that drawing will be slow. */
+export const SEED_CROWD_WARN = 2_000;
 export const MAX_SEED_DIGITS = 120;
 export const MAX_ITERATION_CAP = 200_000;
 export const TOTAL_STEP_BUDGET = 500_000;
