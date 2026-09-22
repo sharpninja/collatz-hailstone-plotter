@@ -508,6 +508,29 @@ input:disabled {
 
 .plot-host.is-brushing { cursor: ew-resize; }
 
+.plot-host.is-beat { cursor: pointer; }
+
+.copy-toast {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(226, 182, 87, 0.55);
+  background: rgba(28, 25, 20, 0.94);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+
+.copy-toast[hidden] { display: none; }
+
 .selection-band {
   fill: rgba(226, 182, 87, 0.16);
   stroke: rgba(226, 182, 87, 0.72);

@@ -12,6 +12,7 @@ import {
   buildFitPolylines,
   buildLayout,
   hitTest,
+  nearestBeat,
   paintSelection,
   pointInPlot,
   renderChart,
@@ -19,6 +20,7 @@ import {
   stepsInAxisRange,
   svgXToAxis,
   type AxisRange,
+  type BeatHit,
   type ChartView,
   type HoverHit,
 } from './chart';
@@ -62,6 +64,7 @@ const legend = required<HTMLDivElement>('legend');
 const plotHost = required<HTMLDivElement>('plot-host');
 const emptyState = required<HTMLDivElement>('empty');
 const tooltip = required<HTMLDivElement>('tooltip');
+const copyToast = required<HTMLParagraphElement>('copy-toast');
 const downloadButton = required<HTMLButtonElement>('download');
 const fitButton = required<HTMLButtonElement>('fit');
 const clearButton = required<HTMLButtonElement>('clear');
@@ -133,7 +136,9 @@ let brush: {
   originX: number;
   currentAxis: number;
   moved: boolean;
+  beat: BeatHit | null;
 } | null = null;
+let copyToastTimer = 0;
 
 const BRUSH_MIN_PX = 6;
 
@@ -267,14 +272,17 @@ plotHost.addEventListener('pointerdown', (event) => {
     if (playbackRange || brush) clearPlaybackRange();
     return;
   }
+  const beat = beatsInput.checked ? nearestBeat(view.layout, point.x, point.y, beatHitRadius(view.svg)) : null;
   brush = {
     pointerId: event.pointerId,
     originAxis: svgXToAxis(view.layout, point.x),
     originX: point.x,
     currentAxis: svgXToAxis(view.layout, point.x),
     moved: false,
+    beat,
   };
-  plotHost.classList.add('is-brushing');
+  plotHost.classList.remove('is-beat');
+  if (!beat) plotHost.classList.add('is-brushing');
   plotHost.setPointerCapture(event.pointerId);
   hideTooltip();
   renderHover(view.hoverLayer, view.layout, null);
@@ -286,7 +294,10 @@ plotHost.addEventListener('pointermove', (event) => {
   if (brush && event.pointerId === brush.pointerId) {
     const point = eventToSvg(view.svg, event);
     if (!point) return;
-    if (Math.abs(point.x - brush.originX) >= BRUSH_MIN_PX) brush.moved = true;
+    if (Math.abs(point.x - brush.originX) >= BRUSH_MIN_PX) {
+      brush.moved = true;
+      plotHost.classList.add('is-brushing');
+    }
     brush.currentAxis = svgXToAxis(view.layout, point.x);
     if (brush.moved) {
       paintSelection(view.selectionLayer, view.layout, { start: brush.originAxis, end: brush.currentAxis });
@@ -298,9 +309,12 @@ plotHost.addEventListener('pointermove', (event) => {
   }
   const point = eventToSvg(view.svg, event);
   if (!point) {
+    plotHost.classList.remove('is-beat');
     hideTooltip();
     return;
   }
+  const beatHover = beatsInput.checked && nearestBeat(view.layout, point.x, point.y, beatHitRadius(view.svg));
+  plotHost.classList.toggle('is-beat', Boolean(beatHover));
   const hit = hitTest(view.layout, point.x, point.y);
   renderHover(view.hoverLayer, view.layout, hit);
   if (!hit) {
@@ -317,6 +331,7 @@ plotHost.addEventListener('pointerup', (event) => {
   plotHost.classList.remove('is-brushing');
   if (plotHost.hasPointerCapture(event.pointerId)) plotHost.releasePointerCapture(event.pointerId);
   if (!finished.moved || !view) {
+    if (finished.beat && !finished.moved) void copyBeatValue(finished.beat.exact);
     applySelectionBand();
     syncPlaybackRangeLabel();
     return;
@@ -334,6 +349,7 @@ plotHost.addEventListener('pointercancel', (event) => {
 
 plotHost.addEventListener('pointerleave', () => {
   if (brush) return;
+  plotHost.classList.remove('is-beat');
   hideTooltip();
   if (view) renderHover(view.hoverLayer, view.layout, null);
 });
@@ -1215,6 +1231,55 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
 function hideTooltip(): void {
   tooltip.hidden = true;
   tooltip.replaceChildren();
+}
+
+function beatHitRadius(svg: SVGSVGElement): number {
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return 14;
+  const origin = new DOMPoint(0, 0).matrixTransform(matrix);
+  const unit = new DOMPoint(1, 0).matrixTransform(matrix);
+  const scale = Math.hypot(unit.x - origin.x, unit.y - origin.y);
+  if (scale <= 0) return 14;
+  return Math.max(8, 14 / scale);
+}
+
+async function copyBeatValue(exact: bigint): Promise<void> {
+  const text = exact.toString();
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch {
+    copied = copyWithTextarea(text);
+  }
+  showCopyToast(copied ? `Copied ${text}` : 'Copy failed.');
+}
+
+function copyWithTextarea(text: string): boolean {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.left = '-9999px';
+  document.body.append(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+}
+
+function showCopyToast(text: string): void {
+  copyToast.hidden = false;
+  copyToast.textContent = text;
+  window.clearTimeout(copyToastTimer);
+  copyToastTimer = window.setTimeout(() => {
+    copyToast.hidden = true;
+  }, 1600);
 }
 
 function eventToSvg(svg: SVGSVGElement, event: PointerEvent): { x: number; y: number } | null {

@@ -94,7 +94,7 @@
               <input id="mark-beats" type="checkbox" checked />
               <span>Mark beats</span>
             </label>
-            <p class="hint">Rings mark terms that are prime powers with an odd exponent. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
+            <p class="hint">Rings mark terms that are prime powers with an odd exponent. Click a ring to copy that value. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
 
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
@@ -146,6 +146,7 @@
               </div>
               <div id="plot-host" class="plot-host"></div>
               <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
+              <p id="copy-toast" class="copy-toast" role="status" hidden></p>
             </div>
             <div class="player" id="player">
               <div class="player-row">

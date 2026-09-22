@@ -476,6 +476,38 @@ export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
   return { step: axis, x: sampleX, align: layout.align, entries };
 }
 
+export interface BeatHit {
+  exact: bigint;
+  seed: bigint;
+  x: number;
+  y: number;
+  step: number;
+  distance: number;
+}
+
+/** Nearest odd-exponent prime-power ring inside `radius` (SVG pixels). */
+export function nearestBeat(layout: Layout, x: number, y: number, radius: number): BeatHit | null {
+  if (radius < 0) return null;
+  let best: BeatHit | null = null;
+  for (const series of layout.series) {
+    for (const sample of series.samples) {
+      if (!sample.beat) continue;
+      const distance = Math.hypot(sample.x - x, sample.y - y);
+      if (distance > radius) continue;
+      if (best && distance >= best.distance) continue;
+      best = {
+        exact: sample.exact,
+        seed: series.seed,
+        x: sample.x,
+        y: sample.y,
+        step: sample.step,
+        distance,
+      };
+    }
+  }
+  return best;
+}
+
 export function seriesPath(series: LayoutSeries): string {
   const first = series.samples[0];
   if (!first) return '';

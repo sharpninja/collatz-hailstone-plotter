@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, selectionBandRect, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
+import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, nearestBeat, selectionBandRect, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -287,6 +287,39 @@ describe('buildLayout', () => {
     expect(band.x + band.width).toBeCloseTo(x90 + gap / 2);
     expect(band.y).toBe(off.plot.y);
     expect(band.height).toBe(off.plot.h);
+  });
+
+  it('picks the nearest beat value in plot pixels, on either scale', () => {
+    const linear = buildLayout([hailstone(27n, 10_000)], { width: 800, height: 480, logY: false });
+    const start = linear.series[0].samples[0];
+    expect(start.exact).toBe(27n);
+    expect(start.beat).toBe(true);
+    expect(nearestBeat(linear, start.x, start.y, 12)?.exact).toBe(27n);
+    expect(nearestBeat(linear, start.x + 40, start.y + 40, 8)).toBeNull();
+    const plain = linear.series[0].samples.find((sample) => !sample.beat);
+    expect(plain).toBeDefined();
+    expect(nearestBeat(linear, plain!.x, plain!.y, 0.4)).toBeNull();
+
+    const logged = buildLayout([hailstone(27n, 10_000)], { width: 800, height: 480, logY: true });
+    const logStart = logged.series[0].samples[0];
+    expect(logStart.y).not.toBeCloseTo(start.y);
+    expect(nearestBeat(logged, logStart.x, logStart.y, 12)?.exact).toBe(27n);
+
+    const aligned = buildLayout([hailstone(27n, 10_000), hailstone(47n, 10_000)], {
+      width: 800,
+      height: 480,
+      logY: false,
+      align: true,
+    });
+    const at47 = aligned.series[1].samples[0];
+    const beside = aligned.series[0].samples[7];
+    expect(at47.exact).toBe(47n);
+    expect(at47.beat).toBe(true);
+    expect(at47.x).toBeCloseTo(beside.x);
+    expect(nearestBeat(aligned, at47.x, at47.y, 24)?.exact).toBe(47n);
+    const betweenY = (at47.y + beside.y) / 2;
+    const toward47 = at47.y + (betweenY - at47.y) * 0.25;
+    expect(nearestBeat(aligned, at47.x, toward47, 80)?.exact).toBe(at47.exact);
   });
 
   it('plots a single point at 1 without a curve', () => {
