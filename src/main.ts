@@ -108,6 +108,21 @@ generate();
 function generate(): void {
   const parsed = parseSeeds(seedsInput.value);
   const maxIterations = parseMaxIterations(maxInput.value);
+  if (parsed.overflow !== null) {
+    trajectories = null;
+    view = null;
+    downloadButton.disabled = true;
+    renderLegend(null);
+    scheduleRender();
+    setMessage([
+      {
+        kind: 'error',
+        text: `That expands to ${formatExact(parsed.overflow)} seeds. At most ${MAX_SEEDS} can be plotted.`,
+      },
+      ...warningParts(parsed, []),
+    ]);
+    return;
+  }
   if (parsed.seeds.length === 0) {
     trajectories = null;
     view = null;
@@ -221,6 +236,15 @@ function warningParts(
   }
   if (parsed.omitted > 0) {
     parts.push({ kind: 'warn', text: `Only the first ${MAX_SEEDS} seeds are plotted.` });
+  }
+  if (parsed.reversed > 0) {
+    parts.push({
+      kind: 'warn',
+      text:
+        parsed.reversed === 1
+          ? 'A reversed range is read from the smaller number up to the larger one.'
+          : 'Reversed ranges are read from the smaller number up to the larger one.',
+    });
   }
   const capped = series.filter((trajectory) => !trajectory.reachedOne && !trajectory.stoppedForSize);
   if (capped.length > 0) {
