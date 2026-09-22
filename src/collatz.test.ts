@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hailstone, peakValue } from './collatz';
+import { firstCommonValue, hailstone, peakValue, type Trajectory } from './collatz';
 import { MAX_SEEDS, MAX_SEEDS_LIMIT, isOddPrimePower, parseMaxIterations, parseMaxSeeds, parseSeeds } from './parse';
 
 describe('hailstone', () => {
@@ -47,6 +47,58 @@ describe('hailstone', () => {
     expect(huge.stoppedForSize).toBe(true);
     expect(huge.reachedOne).toBe(false);
     expect(huge.values).toEqual([seed]);
+  });
+});
+
+function path(seed: bigint, values: bigint[]): Trajectory {
+  return { seed, values, reachedOne: values.at(-1) === 1n, stoppedForSize: false };
+}
+
+describe('firstCommonValue', () => {
+  it('names 47 as the first value shared by 27, 31, 41, and 47', () => {
+    const series = [27n, 31n, 41n, 47n].map((seed) => hailstone(seed, 10_000));
+    const found = firstCommonValue(series);
+    expect(found).not.toBeNull();
+    expect(found?.onlyAtOne).toBe(false);
+    expect(found?.none).toBe(false);
+    expect(found?.value).toBe(47n);
+    expect(found?.hits).toEqual([
+      { seed: 27n, index: 7 },
+      { seed: 31n, index: 2 },
+      { seed: 41n, index: 5 },
+      { seed: 47n, index: 0 },
+    ]);
+  });
+
+  it('skips a single seed and reports a meeting that is only 1', () => {
+    expect(firstCommonValue([hailstone(27n, 100)])).toBeNull();
+    const onlyOne = firstCommonValue([hailstone(1n, 10), hailstone(2n, 10)]);
+    expect(onlyOne?.value).toBeNull();
+    expect(onlyOne?.onlyAtOne).toBe(true);
+    expect(onlyOne?.none).toBe(false);
+  });
+
+  it('reports no shared term when a cap stops the runs before they meet', () => {
+    const found = firstCommonValue([hailstone(27n, 4), hailstone(31n, 1)]);
+    expect(found?.none).toBe(true);
+    expect(found?.value).toBeNull();
+    expect(found?.onlyAtOne).toBe(false);
+  });
+
+  it('breaks ties by the sum of indexes, then the smaller value', () => {
+    const bySum = firstCommonValue([
+      path(9n, [9n, 6n, 3n, 1n]),
+      path(6n, [6n, 3n, 9n, 1n]),
+    ]);
+    expect(bySum?.value).toBe(6n);
+    expect(bySum?.hits.map((hit) => hit.index)).toEqual([1, 0]);
+
+    const byValue = firstCommonValue([
+      path(4n, [4n, 8n, 1n]),
+      path(8n, [8n, 4n, 1n]),
+    ]);
+    expect(byValue?.value).toBe(4n);
+    expect(byValue?.hits.map((hit) => hit.index)).toEqual([0, 1]);
   });
 });
 

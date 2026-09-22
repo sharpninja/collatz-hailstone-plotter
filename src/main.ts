@@ -1,4 +1,4 @@
-import { exceedsSafeInteger, hailstone, peakValue, type Trajectory } from './collatz';
+import { exceedsSafeInteger, firstCommonValue, hailstone, peakValue, type FirstCommonValue, type Trajectory } from './collatz';
 import {
   SERIES_COLORS,
   buildFitPolylines,
@@ -48,6 +48,9 @@ const patternsBlock = required<HTMLElement>('patterns-block');
 const patternsHeading = required<HTMLHeadingElement>('patterns-heading');
 const patternsNote = required<HTMLParagraphElement>('patterns-note');
 const patterns = required<HTMLDivElement>('patterns');
+const commonBlock = required<HTMLElement>('common-block');
+const commonValue = required<HTMLParagraphElement>('common-value');
+const commonNote = required<HTMLParagraphElement>('common-note');
 const playButton = required<HTMLButtonElement>('play');
 const pauseButton = required<HTMLButtonElement>('pause-audio');
 const stopButton = required<HTMLButtonElement>('stop-audio');
@@ -177,6 +180,7 @@ clearButton.addEventListener('click', () => {
   setMessage([]);
   renderLegend(null);
   renderPatterns(null);
+  renderCommon(null);
   resetFit();
   syncTransport();
   scheduleRender();
@@ -321,6 +325,7 @@ function generate(): void {
   showStatus();
   renderLegend(trajectories);
   renderPatterns(trajectories);
+  renderCommon(trajectories);
   syncTransport();
   scheduleRender();
 }
@@ -407,6 +412,7 @@ function abandonPlot(): void {
   resetFit();
   renderPatterns(null);
   renderLegend(null);
+  renderCommon(null);
   syncTransport();
   scheduleRender();
 }
@@ -741,6 +747,45 @@ function statusLine(series: Trajectory[]): string {
   }
   const reached = series.filter((trajectory) => trajectory.reachedOne).length;
   return `Plotted ${series.length} trajectories. ${reached} of them reached 1.`;
+}
+
+function renderCommon(series: Trajectory[] | null): void {
+  const found = series && series.length >= 2 ? firstCommonValue(series) : null;
+  if (!found) {
+    commonBlock.hidden = true;
+    commonValue.textContent = '';
+    commonNote.textContent = '';
+    return;
+  }
+  commonBlock.hidden = false;
+  if (found.none) {
+    commonValue.textContent = 'No shared value';
+    commonNote.textContent = 'These runs do not share a term. A higher iteration cap can let them meet.';
+    return;
+  }
+  if (found.onlyAtOne || found.value === null) {
+    commonValue.textContent = 'Meet only at 1';
+    commonNote.textContent = '1 is the only value in every sequence.';
+    return;
+  }
+  commonValue.textContent = formatExact(found.value);
+  commonNote.textContent = joinNote(found);
+}
+
+function joinNote(found: FirstCommonValue): string {
+  const value = found.value === null ? '1' : formatExact(found.value);
+  const latest = found.hits.reduce((best, hit) => (hit.index > best.index ? hit : best), found.hits[0]);
+  if (!latest || found.hits.length > 8) {
+    const count = formatCount(found.hits.length);
+    if (!latest) return `All ${count} sequences reach ${value}.`;
+    return `All ${count} sequences reach ${value}. The latest is ${formatExact(latest.seed)} at step ${formatCount(latest.index)}.`;
+  }
+  const parts = found.hits.map((hit) => `${formatExact(hit.seed)} at step ${formatCount(hit.index)}`);
+  const list =
+    parts.length <= 2
+      ? parts.join(' and ')
+      : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+  return `All ${formatCount(found.hits.length)} sequences reach ${value}. ${list}.`;
 }
 
 function renderLegend(series: Trajectory[] | null): void {

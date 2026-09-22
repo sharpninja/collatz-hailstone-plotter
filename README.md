@@ -42,6 +42,7 @@ No server, account, or database is involved. After `npm install`, the app is ful
 - **Play.** Sounds one plotted seed, chosen in the Hearing menu. That menu lists every seed on the chart, including when more than 12 are plotted. The browser synthesizes a piano-like tone (no samples and no server). The right hand states each odd-exponent prime power on the beat, a clear motif. The left hand rolls the other terms afterward: a low note, a fifth above it, then that term’s pitch, staggered through the step. Loudness follows the hills of the path: each climb swells toward its local peak and each partial descent eases, so the next climb can swell again. It is not one crescendo to the end. When a descent reaches a pure power of 2, the roll stops and both hands land together, descending through 4 → 2 → 1 until the last note rests. Pitch is log₂ of the value, compressed into C2–C6 and snapped to a C-major pentatonic (C D E G A). Those figures are original. They are not a quotation of an existing piece. ms/step sets the tempo. This sonification is exploratory. It is not a proof.
 - **Max iterations.** Safety cap. A sequence stops early at 1, or when it has taken this many steps (maximum 200,000). The total allowance across every seed is 500,000 steps.
 - **Max seeds to plot.** How many starting values may be drawn at once. The default is 12. Raise it, up to 500, when a range expands further — `1..31` or `oddprimepowers:2..107` are 31 seeds and plot once the field is at least 31. Curve colors repeat after the twelfth seed. The Hearing menu lists every plotted seed. A range larger than the cap is refused with its count. A list of individual numbers keeps the first ones and says the rest were skipped. Seeds × max iterations still has to stay within 500,000 steps.
+- **First common value.** Shown after Generate when two or more seeds are plotted. For each value V that appears in every trajectory (1 is skipped when they share anything else), take the step where each seed first hits V, then the maximum of those steps. The first common value is the V with the smallest maximum: the earliest step by which every path has landed on that number. A tie uses the smallest sum of those steps, then the smaller value. `27, 31, 41, 47` meets at 47 — 27 at step 7, 31 at step 2, 41 at step 5, and 47 at step 0. If 1 is the only shared term, the panel says they meet only at 1. If a cap stops the runs before they share a term, it says so. One seed hides the panel.
 - **Logarithmic value axis.** Useful when one spike towers over the rest of the path. You can toggle it without recomputing.
 - **Hover.** Moving across the chart reads the iteration and the value of each seed that is still running at that step.
 - **Download PNG.** Saves the current plot, including axes and, when several seeds are shown, a legend.
@@ -53,7 +54,7 @@ Sequences are computed with arbitrary-size integers. A term past 2^53 − 1 is s
 
 ## Project layout
 
-- `src/collatz.ts` — the 3n+1 step and the stopping rules
+- `src/collatz.ts` — the 3n+1 step, the stopping rules, and the first value shared by every plotted sequence
 - `src/chart.ts` — scales, the smooth curve, and the SVG chart
 - `src/parity.ts` — exact form of one path in its starting value, and grouping of seeds that share that form
 - `src/fit.ts` — visual polynomial fit of a plotted trajectory
