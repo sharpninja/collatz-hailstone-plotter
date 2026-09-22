@@ -8,6 +8,7 @@ import {
   type Trajectory,
 } from './collatz';
 import {
+  LEGEND_ROW_LIMIT,
   SERIES_COLORS,
   buildFitPolylines,
   buildLayout,
@@ -44,6 +45,7 @@ import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
   MAX_SEEDS_LIMIT,
+  SEED_CROWD_WARN,
   TOTAL_STEP_BUDGET,
   parseMaxIterations,
   parseMaxSeeds,
@@ -701,6 +703,12 @@ function showStatus(): void {
       text: 'Align is on: every path ends together at 1. Shorter seeds start later on the axis.',
     });
   }
+  if (seedCap > SEED_CROWD_WARN) {
+    parts.push({
+      kind: 'warn',
+      text: `Max seeds is above ${formatCount(SEED_CROWD_WARN)}. That many curves are slow to draw, and with the iteration limit on they still share the ${formatCount(TOTAL_STEP_BUDGET)}-step budget.`,
+    });
+  }
   setMessage(parts);
 }
 
@@ -1073,6 +1081,16 @@ function renderLegend(series: Trajectory[] | null): void {
     legend.append(empty);
     return;
   }
+  if (series.length > LEGEND_ROW_LIMIT) {
+    const summary = document.createElement('p');
+    summary.className = 'legend-summary';
+    summary.textContent = `${formatCount(series.length)} seeds`;
+    const note = document.createElement('p');
+    note.className = 'legend-empty';
+    note.textContent = 'Every seed is drawn. Colors repeat after the twelfth curve.';
+    legend.append(summary, note);
+    return;
+  }
   series.forEach((trajectory, index) => {
     const row = document.createElement('article');
     row.className = 'legend-row';
@@ -1142,7 +1160,14 @@ function renderPatterns(series: Trajectory[] | null): void {
     patternsNote.textContent =
       'Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. A different seed can take a different pattern. This describes the paths on the chart. It is not a proof for every starting value.';
   }
-  groups.forEach((group, index) => patterns.append(renderPatternCard(group, index, colors)));
+  const cardLimit = series.length > LEGEND_ROW_LIMIT ? 12 : groups.length;
+  groups.slice(0, cardLimit).forEach((group, index) => patterns.append(renderPatternCard(group, index, colors)));
+  if (groups.length > cardLimit) {
+    const more = document.createElement('p');
+    more.className = 'hint';
+    more.textContent = `${formatCount(groups.length - cardLimit)} more patterns are not listed.`;
+    patterns.append(more);
+  }
 }
 
 function renderPatternCard(group: ParityGroup, index: number, colors: Map<string, string>): HTMLElement {

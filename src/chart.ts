@@ -2,6 +2,11 @@ import { exceedsSafeInteger, peakValue, type Trajectory } from './collatz';
 import { formatTick } from './format';
 import { isOddPrimePower } from './parse';
 
+/** Above this, the legend is one count instead of a row per seed. */
+export const LEGEND_ROW_LIMIT = 30;
+/** Above this, paths are drawn thinner and per-term rings are left off. */
+export const DENSE_SERIES = 80;
+
 export const SERIES_COLORS = [
   '#e2b657',
   '#7ec8c3',
@@ -598,6 +603,8 @@ export function renderChart(
     'aria-label': label,
   });
   svg.classList.add('chart');
+  const dense = layout.series.length > DENSE_SERIES;
+  if (dense) svg.classList.add('chart-many');
 
   const desc = svgEl('desc', {});
   desc.textContent = label;
@@ -725,32 +732,34 @@ export function renderChart(
   if (fits.length > 0) svg.append(fitLayer(fits));
 
   const markers = svgEl('g', { class: 'markers' });
-  for (const series of layout.series) {
-    for (const sample of series.samples) {
-      if (!showSampleDot(sample, series.samples.length)) continue;
-      const radius = sample.peak ? '4.2' : sample.start || sample.end ? '3.2' : '2.15';
-      markers.append(
-        svgEl('circle', {
-          cx: String(sample.x),
-          cy: String(sample.y),
-          r: radius,
-          fill: series.color,
-          class: sample.peak ? 'peak-dot' : 'sample-dot',
-        }),
-      );
-    }
-    if (!markBeats) continue;
-    for (const sample of series.samples) {
-      if (!sample.beat) continue;
-      markers.append(
-        svgEl('circle', {
-          cx: String(sample.x),
-          cy: String(sample.y),
-          r: '6.4',
-          stroke: series.color,
-          class: 'beat-dot',
-        }),
-      );
+  if (!dense) {
+    for (const series of layout.series) {
+      for (const sample of series.samples) {
+        if (!showSampleDot(sample, series.samples.length)) continue;
+        const radius = sample.peak ? '4.2' : sample.start || sample.end ? '3.2' : '2.15';
+        markers.append(
+          svgEl('circle', {
+            cx: String(sample.x),
+            cy: String(sample.y),
+            r: radius,
+            fill: series.color,
+            class: sample.peak ? 'peak-dot' : 'sample-dot',
+          }),
+        );
+      }
+      if (!markBeats) continue;
+      for (const sample of series.samples) {
+        if (!sample.beat) continue;
+        markers.append(
+          svgEl('circle', {
+            cx: String(sample.x),
+            cy: String(sample.y),
+            r: '6.4',
+            stroke: series.color,
+            class: 'beat-dot',
+          }),
+        );
+      }
     }
   }
   svg.append(markers);
@@ -870,6 +879,7 @@ export function paintChart(
   ctx.clip();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  const dense = layout.series.length > DENSE_SERIES;
   for (let index = layout.series.length - 1; index >= 0; index--) {
     const series = layout.series[index];
     const first = series.samples[0];
@@ -879,32 +889,34 @@ export function paintChart(
     for (const curve of series.curves) {
       ctx.bezierCurveTo(curve.c1x, curve.c1y, curve.c2x, curve.c2y, curve.x, curve.y);
     }
-    ctx.strokeStyle = hexToRgba(series.color, 0.22);
-    ctx.lineWidth = 7;
+    ctx.strokeStyle = hexToRgba(series.color, dense ? 0.08 : 0.22);
+    ctx.lineWidth = dense ? 2.5 : 7;
     ctx.stroke();
-    ctx.strokeStyle = series.color;
-    ctx.lineWidth = 2.25;
+    ctx.strokeStyle = dense ? hexToRgba(series.color, 0.55) : series.color;
+    ctx.lineWidth = dense ? 1.15 : 2.25;
     ctx.stroke();
   }
   paintFits(ctx, fits, palette.plot);
   ctx.restore();
 
-  for (const series of layout.series) {
-    for (const sample of series.samples) {
-      if (!showSampleDot(sample, series.samples.length)) continue;
-      ctx.beginPath();
-      ctx.fillStyle = series.color;
-      ctx.arc(sample.x, sample.y, sample.peak ? 4.2 : sample.start || sample.end ? 3.2 : 2.15, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (!markBeats) continue;
-    ctx.strokeStyle = series.color;
-    ctx.lineWidth = 1.75;
-    for (const sample of series.samples) {
-      if (!sample.beat) continue;
-      ctx.beginPath();
-      ctx.arc(sample.x, sample.y, 6.4, 0, Math.PI * 2);
-      ctx.stroke();
+  if (!dense) {
+    for (const series of layout.series) {
+      for (const sample of series.samples) {
+        if (!showSampleDot(sample, series.samples.length)) continue;
+        ctx.beginPath();
+        ctx.fillStyle = series.color;
+        ctx.arc(sample.x, sample.y, sample.peak ? 4.2 : sample.start || sample.end ? 3.2 : 2.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (!markBeats) continue;
+      ctx.strokeStyle = series.color;
+      ctx.lineWidth = 1.75;
+      for (const sample of series.samples) {
+        if (!sample.beat) continue;
+        ctx.beginPath();
+        ctx.arc(sample.x, sample.y, 6.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
   ctx.restore();
