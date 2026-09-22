@@ -9,8 +9,10 @@ import {
   isPowerOfTwo,
   leftHandRoll,
   midiForValue,
+  parseInstrument,
   schedulePlan,
   scoreTrajectory,
+  voiceFor,
 } from './sonify';
 
 describe('trajectory score', () => {
@@ -165,5 +167,50 @@ describe('trajectory score', () => {
     const before = scoreTrajectory(longer, 2_000, { from: 0, to: fullCadence - 1 });
     expect(before.notes.some((note) => note.hand === 'both')).toBe(false);
     expect(before.notes.at(-1)!.value).toBe(longer.values[fullCadence - 1]);
+  });
+
+  it('assigns each hand an instrument without moving the written notes', () => {
+    const score = scoreTrajectory(hailstone(27n, 100));
+    const mixed = schedulePlan(score, 140, { right: true, left: true, rightInstrument: 'organ', leftInstrument: 'bass' });
+    expect(mixed.filter((note) => note.kind === 'right').every((note) => note.instrument === 'organ')).toBe(true);
+    expect(mixed.filter((note) => note.kind === 'left').every((note) => note.instrument === 'bass')).toBe(true);
+    const piano = schedulePlan(score, 140, { right: true, left: true });
+    expect(piano.every((note) => note.instrument === 'piano')).toBe(true);
+    expect(mixed.map((note) => note.time)).toEqual(piano.map((note) => note.time));
+    expect(mixed.map((note) => note.midi)).toEqual(piano.map((note) => note.midi));
+
+    const window = scoreTrajectory(hailstone(27n, 10_000), 2_000, { from: 40, to: 90 });
+    const scoped = schedulePlan(window, 100, { right: true, left: true, rightInstrument: 'rhodes', leftInstrument: 'pluck' });
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped.filter((note) => note.kind === 'right').every((note) => note.instrument === 'rhodes')).toBe(true);
+    expect(scoped.filter((note) => note.kind === 'left').every((note) => note.instrument === 'pluck')).toBe(true);
+    expect(Math.min(...scoped.map((note) => note.time))).toBeLessThan(0.1);
+    expect(Math.max(...scoped.map((note) => note.time))).toBeLessThan(5.1);
+  });
+
+  it('keeps the original piano voice and distinguishes the other timbres', () => {
+    const piano = voiceFor('piano', 'right', false, false);
+    expect(piano.partials.map((partial) => partial.weight)).toEqual([1, 0.48, 0.22, 0.1, 0.04]);
+    expect(piano.attack).toBe(0.004);
+    expect(piano.decay).toBe(0.38);
+    expect(piano.peak).toBe(0.2);
+    expect(piano.hammer).toBe(0.05);
+    expect(piano.transpose).toBe(0);
+    expect(piano.filter).toBeNull();
+    expect(voiceFor('piano', 'left', false, false).peak).toBe(0.04);
+    expect(voiceFor('piano', 'right', true, true).hammer).toBe(0);
+    expect(voiceFor('piano', 'right', true, true).decay).toBe(2.6);
+
+    expect(voiceFor('strings', 'right', false, false).attack).toBeGreaterThan(piano.attack);
+    expect(voiceFor('pluck', 'right', false, false).decay).toBeLessThan(piano.decay);
+    expect(voiceFor('bass', 'left', false, false).transpose).toBe(-12);
+    expect(voiceFor('organ', 'right', false, false).hammer).toBe(0);
+    expect(voiceFor('organ', 'right', false, false).partials.length).toBeGreaterThan(3);
+    expect(voiceFor('rhodes', 'right', false, false).partials.some((partial) => partial.ratio % 1 !== 0)).toBe(true);
+    expect(voiceFor('lead', 'right', false, false).filter?.type).toBe('lowpass');
+    expect(voiceFor('strings', 'right', true, false).hammer).toBe(0);
+    expect(parseInstrument('bass')).toBe('bass');
+    expect(parseInstrument('nope')).toBe('piano');
+    expect(parseInstrument(null)).toBe('piano');
   });
 });

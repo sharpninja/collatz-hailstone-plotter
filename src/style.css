@@ -451,6 +451,8 @@ input:disabled {
   font-size: 0.86rem;
 }
 
+.player-field.instrument select { min-width: 8.75rem; }
+
 .player-field input,
 .player-field select {
   width: auto;

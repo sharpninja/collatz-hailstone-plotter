@@ -230,15 +230,34 @@ function enforceCadenceDescent(notes: PlannedNote[], cadenceAt: number): void {
   }
 }
 
+export const INSTRUMENTS = [
+  { id: 'piano', label: 'Piano' },
+  { id: 'rhodes', label: 'Rhodes' },
+  { id: 'organ', label: 'Organ' },
+  { id: 'strings', label: 'Strings' },
+  { id: 'pluck', label: 'Pluck' },
+  { id: 'lead', label: 'Soft lead' },
+  { id: 'bass', label: 'Bass' },
+] as const;
+
+export type InstrumentId = (typeof INSTRUMENTS)[number]['id'];
+
+export function parseInstrument(value: string | null | undefined): InstrumentId {
+  return INSTRUMENTS.some((instrument) => instrument.id === value) ? (value as InstrumentId) : 'piano';
+}
+
 export interface PlayHands {
   right: boolean;
   left: boolean;
+  rightInstrument?: InstrumentId;
+  leftInstrument?: InstrumentId;
 }
 
 interface LiveNote {
   time: number;
   midi: number;
   kind: 'right' | 'left';
+  instrument: InstrumentId;
   /** Closing powers of 2: both hands together, softer, no roll. */
   settle: boolean;
   ring: boolean;
@@ -248,12 +267,22 @@ interface LiveNote {
 
 export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): LiveNote[] {
   const stepSec = clampStepMs(stepMs) / 1000;
+  const rightInstrument = parseInstrument(hands.rightInstrument);
+  const leftInstrument = parseInstrument(hands.leftInstrument);
   const plan: LiveNote[] = [];
   for (const note of score.notes) {
     const ring = note.value === 1n;
     const gain = note.dynamics;
     if (note.hand === 'right' && hands.right) {
-      plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: false, ring: false, gain });
+      plan.push({
+        time: note.step * stepSec,
+        midi: note.midi,
+        kind: 'right',
+        instrument: rightInstrument,
+        settle: false,
+        ring: false,
+        gain,
+      });
     } else if (note.hand === 'left' && hands.left) {
       const roll = leftHandRoll(note.midi);
       LEFT_HAND_ROLL.forEach((fraction, index) => {
@@ -261,6 +290,7 @@ export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): Li
           time: note.step * stepSec + fraction * stepSec,
           midi: roll[index],
           kind: 'left',
+          instrument: leftInstrument,
           settle: false,
           ring: false,
           gain,
@@ -268,10 +298,26 @@ export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): Li
       });
     } else if (note.hand === 'both') {
       if (hands.right) {
-        plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: true, ring, gain });
+        plan.push({
+          time: note.step * stepSec,
+          midi: note.midi,
+          kind: 'right',
+          instrument: rightInstrument,
+          settle: true,
+          ring,
+          gain,
+        });
       }
       if (hands.left) {
-        plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'left', settle: true, ring, gain });
+        plan.push({
+          time: note.step * stepSec,
+          midi: note.midi,
+          kind: 'left',
+          instrument: leftInstrument,
+          settle: true,
+          ring,
+          gain,
+        });
       }
     }
   }
@@ -282,14 +328,176 @@ const RIGHT_PARTIALS = [1, 0.48, 0.22, 0.1, 0.04];
 const LEFT_PARTIALS = [1, 0.22, 0.06];
 const REST_PARTIALS = [1, 0.3, 0.08];
 
+export interface InstrumentVoice {
+  wave: OscillatorType;
+  partials: ReadonlyArray<{ ratio: number; weight: number }>;
+  attack: number;
+  decay: number;
+  peak: number;
+  /** How long playback should wait after the attack before treating the note as finished. */
+  release: number;
+  /** Hammer-noise gain. Zero skips the click. */
+  hammer: number;
+  /** Semitones added to the written pitch. Bass sits an octave down. */
+  transpose: number;
+  filter: { type: BiquadFilterType; frequency: number; q: number } | null;
+}
+
+function harmonics(weights: readonly number[]): Array<{ ratio: number; weight: number }> {
+  return weights.map((weight, index) => ({ ratio: index + 1, weight }));
+}
+
+/** The original piano: bright on the right-hand beat, softer on the left-hand roll. */
+function pianoVoice(kind: 'right' | 'left', settle: boolean, ring: boolean): InstrumentVoice {
+  return {
+    wave: 'sine',
+    partials: harmonics(settle || ring ? REST_PARTIALS : kind === 'right' ? RIGHT_PARTIALS : LEFT_PARTIALS),
+    attack: settle || ring ? 0.03 : kind === 'right' ? 0.004 : 0.012,
+    decay: ring ? 2.6 : settle ? 0.95 : kind === 'right' ? 0.38 : 0.26,
+    peak: ring ? 0.07 : settle ? (kind === 'right' ? 0.11 : 0.05) : kind === 'right' ? 0.2 : 0.04,
+    release: ring ? 2.8 : settle ? 1.15 : kind === 'right' ? 0.48 : 0.34,
+    hammer: settle || ring ? 0 : kind === 'right' ? 0.05 : 0.012,
+    transpose: 0,
+    filter: null,
+  };
+}
+
+interface InstrumentPreset {
+  wave: OscillatorType;
+  partials: ReadonlyArray<{ ratio: number; weight: number }>;
+  attack: number;
+  decay: number;
+  peak: number;
+  hammer: number;
+  transpose: number;
+  filter: InstrumentVoice['filter'];
+}
+
+const INSTRUMENT_PRESETS: Record<Exclude<InstrumentId, 'piano'>, InstrumentPreset> = {
+  rhodes: {
+    wave: 'sine',
+    partials: [
+      { ratio: 1, weight: 1 },
+      { ratio: 2.003, weight: 0.42 },
+      { ratio: 4.02, weight: 0.16 },
+      { ratio: 6.04, weight: 0.05 },
+    ],
+    attack: 0.012,
+    decay: 0.72,
+    peak: 0.16,
+    hammer: 0.018,
+    transpose: 0,
+    filter: { type: 'lowpass', frequency: 2800, q: 0.7 },
+  },
+  organ: {
+    wave: 'sine',
+    partials: [
+      { ratio: 1, weight: 1 },
+      { ratio: 2, weight: 0.62 },
+      { ratio: 3, weight: 0.4 },
+      { ratio: 4, weight: 0.48 },
+      { ratio: 6, weight: 0.22 },
+    ],
+    attack: 0.008,
+    decay: 0.62,
+    peak: 0.11,
+    hammer: 0,
+    transpose: 0,
+    filter: null,
+  },
+  strings: {
+    wave: 'sawtooth',
+    partials: [
+      { ratio: 1, weight: 1 },
+      { ratio: 1.003, weight: 0.55 },
+    ],
+    attack: 0.22,
+    decay: 0.95,
+    peak: 0.08,
+    hammer: 0,
+    transpose: 0,
+    filter: { type: 'lowpass', frequency: 1400, q: 0.6 },
+  },
+  pluck: {
+    wave: 'triangle',
+    partials: [
+      { ratio: 1, weight: 1 },
+      { ratio: 2, weight: 0.45 },
+      { ratio: 3, weight: 0.2 },
+      { ratio: 5, weight: 0.08 },
+    ],
+    attack: 0.003,
+    decay: 0.16,
+    peak: 0.16,
+    hammer: 0.028,
+    transpose: 0,
+    filter: { type: 'lowpass', frequency: 3200, q: 0.8 },
+  },
+  lead: {
+    wave: 'sawtooth',
+    partials: [
+      { ratio: 1, weight: 1 },
+      { ratio: 1.007, weight: 0.7 },
+    ],
+    attack: 0.05,
+    decay: 0.48,
+    peak: 0.07,
+    hammer: 0,
+    transpose: 0,
+    filter: { type: 'lowpass', frequency: 1800, q: 0.7 },
+  },
+  bass: {
+    wave: 'sine',
+    partials: [
+      { ratio: 1, weight: 1 },
+      { ratio: 2, weight: 0.35 },
+      { ratio: 3, weight: 0.08 },
+    ],
+    attack: 0.012,
+    decay: 0.32,
+    peak: 0.28,
+    hammer: 0,
+    transpose: -12,
+    filter: { type: 'lowpass', frequency: 480, q: 0.7 },
+  },
+};
+
+/** Envelope and oscillator mix for one hand. Piano matches the original voice exactly. */
+export function voiceFor(id: InstrumentId, kind: 'right' | 'left', settle: boolean, ring: boolean): InstrumentVoice {
+  if (id === 'piano') return pianoVoice(kind, settle, ring);
+  const base = INSTRUMENT_PRESETS[id];
+  let attack = base.attack;
+  let decay = base.decay;
+  let peak = base.peak;
+  let hammer = base.hammer;
+  if (kind === 'left') peak *= 0.5;
+  if (settle || ring) {
+    hammer = 0;
+    peak *= ring ? 0.45 : 0.6;
+    attack = Math.max(attack, 0.02);
+    decay = Math.max(decay * (ring ? 2.4 : 1.35), ring ? 1.8 : 0.7);
+  }
+  return {
+    wave: base.wave,
+    partials: base.partials,
+    attack,
+    decay,
+    peak,
+    release: attack + decay + 0.08,
+    hammer,
+    transpose: base.transpose,
+    filter: base.filter,
+  };
+}
+
 export interface PlayerHooks {
   onFrame?: (frame: { step: number; steps: number; level: number }) => void;
   onEnded?: () => void;
 }
 
 /**
- * Piano-like two-voice playback. One AudioContext is reused.
- * Pause suspends the context, so already-scheduled notes hold their place.
+ * Two-voice playback. Each hand uses its chosen synthesized instrument.
+ * One AudioContext is reused. Pause suspends the context, so already-scheduled notes hold their place.
  */
 export class TrajectoryPlayer {
   private ctx: AudioContext | null = null;
@@ -332,9 +540,9 @@ export class TrajectoryPlayer {
       let last = start;
       for (const note of plan) {
         const at = start + note.time;
-        this.strike(ctx, at, note.midi, note.kind, note.settle, note.ring, note.gain);
-        const release = note.ring ? 2.8 : note.settle ? 1.15 : note.kind === 'right' ? 0.48 : 0.34;
-        if (at + release > last) last = at + release;
+        const voice = voiceFor(note.instrument, note.kind, note.settle, note.ring);
+        this.strike(ctx, at, note.midi, note.gain, voice);
+        if (at + voice.release > last) last = at + voice.release;
       }
       this.startedAt = start;
       this.endAt = plan.length === 0 ? start + 0.1 : last;
@@ -395,41 +603,38 @@ export class TrajectoryPlayer {
     return ctx;
   }
 
-  private strike(
-    ctx: AudioContext,
-    time: number,
-    midi: number,
-    kind: 'right' | 'left',
-    settle: boolean,
-    ring: boolean,
-    gain: number,
-  ): void {
+  private strike(ctx: AudioContext, time: number, midi: number, gain: number, voice: InstrumentVoice): void {
     const master = this.master;
     if (!master) return;
     const shaped = Math.min(1, Math.max(0.05, gain));
-    const freq = 440 * 2 ** ((midi - 69) / 12);
-    const partials = settle ? REST_PARTIALS : kind === 'right' ? RIGHT_PARTIALS : LEFT_PARTIALS;
-    const peak = (ring ? 0.07 : settle ? (kind === 'right' ? 0.11 : 0.05) : kind === 'right' ? 0.2 : 0.04) * shaped;
-    const attack = settle ? 0.03 : kind === 'right' ? 0.004 : 0.012;
-    const decay = ring ? 2.6 : settle ? 0.95 : kind === 'right' ? 0.38 : 0.26;
+    const freq = 440 * 2 ** ((midi + voice.transpose - 69) / 12);
     const amp = ctx.createGain();
     amp.gain.setValueAtTime(0.0001, time);
-    amp.gain.exponentialRampToValueAtTime(peak, time + attack);
-    amp.gain.exponentialRampToValueAtTime(0.0001, time + attack + decay);
-    amp.connect(master);
-    partials.forEach((weight, index) => {
+    amp.gain.exponentialRampToValueAtTime(voice.peak * shaped, time + voice.attack);
+    amp.gain.exponentialRampToValueAtTime(0.0001, time + voice.attack + voice.decay);
+    if (voice.filter) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = voice.filter.type;
+      filter.frequency.setValueAtTime(voice.filter.frequency, time);
+      filter.Q.value = voice.filter.q;
+      amp.connect(filter);
+      filter.connect(master);
+    } else {
+      amp.connect(master);
+    }
+    for (const partial of voice.partials) {
       const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq * (index + 1), time);
-      const partial = ctx.createGain();
-      partial.gain.value = weight;
-      osc.connect(partial);
-      partial.connect(amp);
+      osc.type = voice.wave;
+      osc.frequency.setValueAtTime(freq * partial.ratio, time);
+      const level = ctx.createGain();
+      level.gain.value = partial.weight;
+      osc.connect(level);
+      level.connect(amp);
       osc.start(time);
-      osc.stop(time + attack + decay + 0.02);
+      osc.stop(time + voice.attack + voice.decay + 0.02);
       this.sources.push(osc);
-    });
-    if (!settle) this.hammer(ctx, time, kind === 'right' ? 0.05 : 0.012);
+    }
+    if (voice.hammer > 0) this.hammer(ctx, time, voice.hammer);
   }
 
   private hammer(ctx: AudioContext, time: number, gain: number): void {

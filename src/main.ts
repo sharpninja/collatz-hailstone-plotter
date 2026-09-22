@@ -27,7 +27,17 @@ import { fitSeries, type FitResult } from './fit';
 import { groupParityForms, oddPrimePowerParitySummary, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
-import { MAX_PLAY_STEPS, TrajectoryPlayer, clampStepMs, scoreTrajectory, type Score } from './sonify';
+import {
+  INSTRUMENTS,
+  MAX_PLAY_STEPS,
+  TrajectoryPlayer,
+  clampStepMs,
+  parseInstrument,
+  scoreTrajectory,
+  type InstrumentId,
+  type PlayHands,
+  type Score,
+} from './sonify';
 import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
@@ -71,6 +81,8 @@ const stopButton = required<HTMLButtonElement>('stop-audio');
 const stepMsInput = required<HTMLInputElement>('step-ms');
 const rightHandInput = required<HTMLInputElement>('hand-right');
 const leftHandInput = required<HTMLInputElement>('hand-left');
+const rightInstrumentSelect = required<HTMLSelectElement>('instrument-right');
+const leftInstrumentSelect = required<HTMLSelectElement>('instrument-left');
 const playSeedSelect = required<HTMLSelectElement>('play-seed');
 const playStatus = required<HTMLParagraphElement>('play-status');
 const playbackRangeLabel = required<HTMLParagraphElement>('playback-range');
@@ -80,7 +92,7 @@ const playerRoot = required<HTMLDivElement>('player');
 const player = new TrajectoryPlayer();
 
 const PLAY_HINT =
-  'Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
+  'Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
@@ -195,6 +207,9 @@ playSeedSelect.addEventListener('change', () => {
 });
 
 limitIterationsInput.addEventListener('change', syncIterationLimitField);
+
+rightInstrumentSelect.addEventListener('change', onInstrumentChange);
+leftInstrumentSelect.addEventListener('change', onInstrumentChange);
 
 clearSelectionButton.addEventListener('click', () => {
   clearPlaybackRange();
@@ -327,6 +342,8 @@ const observer = new ResizeObserver(() => scheduleRender());
 observer.observe(plotHost);
 
 syncIterationLimitField();
+fillInstrumentSelect(rightInstrumentSelect, loadInstrument('hailstone.instrument.right'));
+fillInstrumentSelect(leftInstrumentSelect, loadInstrument('hailstone.instrument.left'));
 generate();
 
 function syncIterationLimitField(): void {
@@ -454,8 +471,56 @@ function readStepMs(): number {
   return clampStepMs(Number(stepMsInput.value));
 }
 
-function readHands(): { right: boolean; left: boolean } {
-  return { right: rightHandInput.checked, left: leftHandInput.checked };
+function readHands(): PlayHands {
+  return {
+    right: rightHandInput.checked,
+    left: leftHandInput.checked,
+    rightInstrument: parseInstrument(rightInstrumentSelect.value),
+    leftInstrument: parseInstrument(leftInstrumentSelect.value),
+  };
+}
+
+function fillInstrumentSelect(select: HTMLSelectElement, selected: InstrumentId): void {
+  select.replaceChildren();
+  for (const instrument of INSTRUMENTS) {
+    const option = document.createElement('option');
+    option.value = instrument.id;
+    option.textContent = instrument.label;
+    select.append(option);
+  }
+  select.value = selected;
+}
+
+function loadInstrument(key: string): InstrumentId {
+  try {
+    return parseInstrument(localStorage.getItem(key));
+  } catch {
+    return 'piano';
+  }
+}
+
+function storeInstruments(): void {
+  try {
+    localStorage.setItem('hailstone.instrument.right', rightInstrumentSelect.value);
+    localStorage.setItem('hailstone.instrument.left', leftInstrumentSelect.value);
+  } catch {
+    // Storage can be blocked. The menus still hold the choice for this page.
+  }
+}
+
+function onInstrumentChange(): void {
+  storeInstruments();
+  if (player.state === 'playing' || player.state === 'starting') {
+    player.stop();
+    levelBar.style.width = '0';
+    startPlayback();
+    return;
+  }
+  if (player.state === 'paused') {
+    player.stop();
+    levelBar.style.width = '0';
+    syncTransport();
+  }
 }
 
 function playerHooks(): { onFrame: (frame: { step: number; steps: number; level: number }) => void; onEnded: () => void } {
