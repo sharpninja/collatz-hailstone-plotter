@@ -11,7 +11,7 @@ import {
 } from './chart';
 import { downloadPng, type PngFit } from './export';
 import { fitSeries, type FitResult } from './fit';
-import { groupParityForms, parityForm, primeParitySummary, type ParityForm, type ParityGroup } from './parity';
+import { groupParityForms, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
 import {
@@ -160,20 +160,26 @@ generate();
 function generate(): void {
   const parsed = parseSeeds(seedsInput.value);
   const maxIterations = parseMaxIterations(maxInput.value);
-  if (parsed.emptyPrimes.length > 0) {
+  if (parsed.emptyPrimes.length > 0 || parsed.emptyPrimePowers.length > 0) {
     abandonPlot();
-    setMessage([
-      { kind: 'error', text: emptyPrimesMessage(parsed.emptyPrimes) },
-      ...warningParts(parsed, []),
-    ]);
+    const text = [
+      parsed.emptyPrimes.length > 0 ? emptySetMessage(parsed.emptyPrimes, 'primes') : '',
+      parsed.emptyPrimePowers.length > 0 ? emptySetMessage(parsed.emptyPrimePowers, 'prime powers') : '',
+    ]
+      .filter((line) => line.length > 0)
+      .join(' ');
+    setMessage([{ kind: 'error', text }, ...warningParts(parsed, [])]);
     return;
   }
-  if (parsed.tooWide.length > 0) {
+  if (parsed.tooWide.length > 0 || parsed.tooWidePowers.length > 0) {
     abandonPlot();
-    setMessage([
-      { kind: 'error', text: tooWideMessage(parsed.tooWide) },
-      ...warningParts(parsed, []),
-    ]);
+    const text = [
+      parsed.tooWide.length > 0 ? tooWideMessage(parsed.tooWide, 'prime') : '',
+      parsed.tooWidePowers.length > 0 ? tooWideMessage(parsed.tooWidePowers, 'prime-power') : '',
+    ]
+      .filter((line) => line.length > 0)
+      .join(' ');
+    setMessage([{ kind: 'error', text }, ...warningParts(parsed, [])]);
     return;
   }
   if (parsed.overCap) {
@@ -365,6 +371,14 @@ function renderFitPanel(): void {
         `${primeParitySummary(fits.length, forms.length)} This compares the primes on the chart. It is not a proof for every prime, or for every starting value.`,
       ),
     );
+  } else if (lastParsed?.primePowerOnly && fits.length > 1) {
+    const forms = groupParityForms(fits.map((fit) => fit.parity));
+    fitResults.append(
+      paragraph(
+        'fit-summary',
+        `${primePowerParitySummary(fits.length, forms.length)} This compares the prime powers on the chart. It is not a proof for every prime power, or for every starting value.`,
+      ),
+    );
   }
   for (const fit of fits) {
     fitResults.append(renderFitCard(fit));
@@ -469,15 +483,17 @@ function seriesKey(series: Trajectory[]): string {
     .join(',');
 }
 
-function emptyPrimesMessage(ranges: string[]): string {
-  if (ranges.length === 1) return `No primes in ${ranges[0]}.`;
-  if (ranges.length === 2) return `No primes in ${ranges[0]} or ${ranges[1]}.`;
-  return `No primes in ${ranges.slice(0, -1).join(', ')}, or ${ranges[ranges.length - 1]}.`;
+function emptySetMessage(ranges: string[], noun: string): string {
+  if (ranges.length === 1) return `No ${noun} in ${ranges[0]}.`;
+  if (ranges.length === 2) return `No ${noun} in ${ranges[0]} or ${ranges[1]}.`;
+  return `No ${noun} in ${ranges.slice(0, -1).join(', ')}, or ${ranges[ranges.length - 1]}.`;
 }
 
-function tooWideMessage(ranges: string[]): string {
-  if (ranges.length === 1) return `The prime range ${ranges[0]} is too wide to expand. Shorten it.`;
-  return 'Those prime ranges are too wide to expand. Shorten them.';
+function tooWideMessage(ranges: string[], noun: string): string {
+  const label = noun === 'prime' ? 'prime range' : 'prime-power range';
+  const labels = noun === 'prime' ? 'prime ranges' : 'prime-power ranges';
+  if (ranges.length === 1) return `The ${label} ${ranges[0]} is too wide to expand. Shorten it.`;
+  return `Those ${labels} are too wide to expand. Shorten them.`;
 }
 
 function warningParts(
@@ -601,6 +617,11 @@ function renderPatterns(series: Trajectory[] | null): void {
     const primeWord = series.length === 1 ? 'prime' : 'primes';
     patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} ${primeWord})`;
     patternsNote.textContent = `${primeParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares the primes on the chart. It is not a proof for every prime, or for every starting value.`;
+  } else if (lastParsed?.primePowerOnly) {
+    const formWord = groups.length === 1 ? 'form' : 'forms';
+    const powerWord = series.length === 1 ? 'prime power' : 'prime powers';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} ${powerWord})`;
+    patternsNote.textContent = `${primePowerParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares the prime powers on the chart. It is not a proof for every prime power, or for every starting value.`;
   } else {
     const noun = groups.length === 1 ? 'pattern' : 'patterns';
     patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;

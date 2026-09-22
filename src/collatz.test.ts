@@ -254,6 +254,62 @@ describe('parseSeeds', () => {
     expect(parsed.emptyPrimes).toEqual([]);
     expect(parsed.overflow).toBeNull();
   });
+
+  it('expands prime powers, including 27 = 3^3', () => {
+    expect(parseSeeds('primepowers:2..50').seeds).toEqual([4n, 8n, 9n, 16n, 25n, 27n, 32n, 49n]);
+    expect(parseSeeds('primepowers:2..50').primePowerOnly).toBe(true);
+    expect(parseSeeds('primepowers:2..50').primeOnly).toBe(false);
+    expect(parseSeeds('pp:2..50').seeds).toEqual([4n, 8n, 9n, 16n, 25n, 27n, 32n, 49n]);
+    expect(parseSeeds('primepowers 20..40').seeds).toEqual([25n, 27n, 32n]);
+    expect(parseSeeds('PrimePowers:25..27').seeds).toEqual([25n, 27n]);
+    expect(parseSeeds('primepowers:27..27').seeds).toEqual([27n]);
+    expect(parseSeeds('pp:27..27').seeds).toEqual([27n]);
+    expect(parseSeeds('primepowers:2..100').seeds).toEqual([4n, 8n, 9n, 16n, 25n, 27n, 32n, 49n, 64n, 81n]);
+    expect(parseSeeds('primepowers:36..36').seeds).toEqual([]);
+    expect(parseSeeds('primepowers:36..36').emptyPrimePowers).toEqual(['36..36']);
+    expect(parseSeeds('20..30').seeds).toEqual([20n, 21n, 22n, 23n, 24n, 25n, 26n, 27n, 28n, 29n, 30n]);
+    expect(parseSeeds('primes:20..30').seeds).toEqual([23n, 29n]);
+  });
+
+  it('mixes prime powers with primes and literals', () => {
+    const mixed = parseSeeds('27, primes:20..40, primepowers:2..30');
+    expect(mixed.seeds).toEqual([27n, 23n, 29n, 31n, 37n, 4n, 8n, 9n, 16n, 25n]);
+    expect(mixed.duplicates).toBe(1);
+    expect(mixed.primeOnly).toBe(false);
+    expect(mixed.primePowerOnly).toBe(false);
+    const beside = parseSeeds('4..9, primepowers:2..30');
+    expect(beside.seeds).toEqual([4n, 5n, 6n, 7n, 8n, 9n, 16n, 25n, 27n]);
+    expect(beside.duplicates).toBe(3);
+  });
+
+  it('rejects an empty prime-power range and swaps inverted bounds', () => {
+    const empty = parseSeeds('primepowers:10..15');
+    expect(empty.seeds).toEqual([]);
+    expect(empty.emptyPrimePowers).toEqual(['10..15']);
+    expect(empty.primePowerOnly).toBe(false);
+    const swapped = parseSeeds('primepowers:30..4');
+    expect(swapped.seeds).toEqual([4n, 8n, 9n, 16n, 25n, 27n]);
+    expect(swapped.reversed).toBe(1);
+    const both = parseSeeds('primes:14..16, primepowers:10..15');
+    expect(both.seeds).toEqual([]);
+    expect(both.emptyPrimes).toEqual(['14..16']);
+    expect(both.emptyPrimePowers).toEqual(['10..15']);
+  });
+
+  it('refuses an oversize prime-power range', () => {
+    const wide = parseSeeds('primepowers:2..200');
+    expect(wide.seeds).toEqual([]);
+    expect(wide.overflow).toBe(14n);
+    expect(wide.primePowerOnly).toBe(false);
+    const started = Date.now();
+    const enormous = parseSeeds(`primepowers:4..1${'0'.repeat(40)}`);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(enormous.seeds).toEqual([]);
+    expect(enormous.overCap).toBe(true);
+    expect(parseSeeds('primepowers:16777216..16777216').seeds).toEqual([16777216n]);
+    expect(parseSeeds('primepowers:0..10, 4').rejected).toEqual(['primepowers:0..10']);
+    expect(parseSeeds('primepowers:0..10, 4').seeds).toEqual([4n]);
+  });
 });
 
 describe('parseMaxIterations', () => {

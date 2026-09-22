@@ -30,8 +30,12 @@ export interface ParsedSeeds {
   reversed: number;
   /** Prime ranges with no prime ≥ 2, written `lo..hi` after swapping reversed bounds. */
   emptyPrimes: string[];
+  /** Prime-power ranges with no p^k for k ≥ 2, written `lo..hi` after swapping. */
+  emptyPrimePowers: string[];
   /** Prime ranges that were too wide to check. */
   tooWide: string[];
+  /** Prime-power ranges that were too wide to check. */
+  tooWidePowers: string[];
   /**
    * More than {@link MAX_SEEDS} seeds, but the exact size was not counted.
    * `seeds` is empty. Used when a prime range sits past the sieve.
@@ -42,10 +46,16 @@ export interface ParsedSeeds {
    * ordinary ranges. Used to describe those primes' parity forms.
    */
   primeOnly: boolean;
+  /**
+   * Every plotted seed came from a prime-power range (p^k, k ≥ 2).
+   * Used to describe those seeds' parity forms.
+   */
+  primePowerOnly: boolean;
 }
 
 const RANGE = /^(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/;
 const PRIMES = /^(?:primes|p)\s*(?::\s*|\s+)(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/i;
+const PRIME_POWERS = /^(?:primepowers|pp)\s*(?::\s*|\s+)(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/i;
 
 interface RangePiece {
   kind: 'range';
@@ -65,8 +75,16 @@ interface PrimesPiece {
   label: string;
 }
 
+interface PrimePowersPiece {
+  kind: 'powers';
+  lo: bigint;
+  hi: bigint;
+  label: string;
+}
+
 type IntegerPiece = RangePiece | NumberPiece;
-type Piece = IntegerPiece | PrimesPiece;
+type SpecialPiece = PrimesPiece | PrimePowersPiece;
+type Piece = IntegerPiece | SpecialPiece;
 type Interval = readonly [bigint, bigint];
 
 interface PrimeCensus {
@@ -83,10 +101,28 @@ export function parseSeeds(text: string): ParsedSeeds {
   let reversed = 0;
   let sawExpansion = false;
   const emptyPrimes: string[] = [];
+  const emptyPrimePowers: string[] = [];
   const tooWide: string[] = [];
-  const census = cachedCensus();
+  const tooWidePowers: string[] = [];
+  const primeCensus = cachedCensus(censusPrimes);
+  const powerCensus = cachedCensus(censusPrimePowers);
 
   for (const token of tokenize(text)) {
+    const powers = readBounded(token, PRIME_POWERS);
+    if (powers === 'bad') {
+      rejected.push(token);
+      continue;
+    }
+    if (powers) {
+      sawExpansion = true;
+      reversed += powers.reversed ? 1 : 0;
+      const found = powerCensus(powers.lo, powers.hi);
+      if (found.tooWide) tooWidePowers.push(powers.label);
+      else if (!found.overCap && found.count === 0n) emptyPrimePowers.push(powers.label);
+      pieces.push({ kind: 'powers', lo: powers.lo, hi: powers.hi, label: powers.label });
+      continue;
+    }
+
     const primes = readPrimes(token);
     if (primes === 'bad') {
       rejected.push(token);
@@ -95,7 +131,7 @@ export function parseSeeds(text: string): ParsedSeeds {
     if (primes) {
       sawExpansion = true;
       reversed += primes.reversed ? 1 : 0;
-      const found = census(primes.lo, primes.hi);
+      const found = primeCensus(primes.lo, primes.hi);
       if (found.tooWide) tooWide.push(primes.label);
       else if (!found.overCap && found.count === 0n) emptyPrimes.push(primes.label);
       pieces.push({ kind: 'primes', lo: primes.lo, hi: primes.hi, label: primes.label });
@@ -133,28 +169,35 @@ export function parseSeeds(text: string): ParsedSeeds {
     overflow: null as bigint | null,
     reversed,
     emptyPrimes,
+    emptyPrimePowers,
     tooWide: [] as string[],
+    tooWidePowers: [] as string[],
     overCap: false,
     primeOnly: false,
+    primePowerOnly: false,
   };
 
-  // An empty prime range is an error on its own, so nothing else in the field is plotted.
-  if (emptyPrimes.length > 0) return base;
-  if (tooWide.length > 0) return { ...base, tooWide };
+  // An empty prime or prime-power range is an error on its own, so nothing else is plotted.
+  if (emptyPrimes.length > 0 || emptyPrimePowers.length > 0) return base;
+  if (tooWide.length > 0 || tooWidePowers.length > 0) return { ...base, tooWide, tooWidePowers };
 
   if (!sawExpansion) return parseIndividuals(pieces, rejected);
 
-  const distinct = distinctCensus(pieces, census);
-  if (distinct.tooWide) {
-    const labels = pieces.filter((piece): piece is PrimesPiece => piece.kind === 'primes').map((piece) => piece.label);
-    return { ...base, tooWide: labels };
+  const distinct = distinctCensus(pieces, primeCensus, powerCensus);
+  if (distinct.tooWide || distinct.tooWidePowers) {
+    return {
+      ...base,
+      tooWide: distinct.tooWide ? labelsOf(pieces, 'primes') : [],
+      tooWidePowers: distinct.tooWidePowers ? labelsOf(pieces, 'powers') : [],
+    };
   }
   if (distinct.overCap) return { ...base, overCap: true };
   if (distinct.count > BigInt(MAX_SEEDS)) return { ...base, overflow: distinct.count };
 
   const expanded = expandInOrder(pieces);
   const primeOnly = expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'primes');
-  return { ...base, seeds: expanded.seeds, duplicates: expanded.duplicates, primeOnly };
+  const primePowerOnly = expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'powers');
+  return { ...base, seeds: expanded.seeds, duplicates: expanded.duplicates, primeOnly, primePowerOnly };
 }
 
 /** Positive integer within the iteration cap, or null when the field is unusable. */
@@ -167,14 +210,21 @@ export function parseMaxIterations(text: string): number | null {
 }
 
 function tokenize(text: string): string[] {
-  // `primes:10..50`, `p:10..50`, and `primes 10..50` are one token, before a plain `10..50`.
+  // Prime-power forms come before `p:` / `primes`, which come before a plain `10..50`.
   const token =
-    /(?:primes|p)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|\d+\s*(?:\.{2,3}|-)\s*\d+|[^\s,]+/gi;
+    /(?:primepowers|pp)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primepowers|pp)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|\d+\s*(?:\.{2,3}|-)\s*\d+|[^\s,]+/gi;
   return [...text.matchAll(token)].map((match) => match[0]);
 }
 
 function readPrimes(token: string): { lo: bigint; hi: bigint; reversed: boolean; label: string } | 'bad' | null {
-  const match = PRIMES.exec(token);
+  return readBounded(token, PRIMES);
+}
+
+function readBounded(
+  token: string,
+  pattern: RegExp,
+): { lo: bigint; hi: bigint; reversed: boolean; label: string } | 'bad' | null {
+  const match = pattern.exec(token);
   if (!match) return null;
   let lo = BigInt(match[1]);
   let hi = BigInt(match[2]);
@@ -207,40 +257,70 @@ function acceptableSeed(value: bigint): boolean {
   return value >= 1n && value.toString().length <= MAX_SEED_DIGITS;
 }
 
-function cachedCensus(): (lo: bigint, hi: bigint) => PrimeCensus {
+function labelsOf(pieces: Piece[], kind: SpecialPiece['kind']): string[] {
+  return pieces.filter((piece): piece is SpecialPiece => piece.kind === kind).map((piece) => piece.label);
+}
+
+function cachedCensus(
+  compute: (lo: bigint, hi: bigint) => PrimeCensus,
+): (lo: bigint, hi: bigint) => PrimeCensus {
   const cache = new Map<string, PrimeCensus>();
   return (lo, hi) => {
     const key = `${lo}:${hi}`;
     const hit = cache.get(key);
     if (hit) return hit;
-    const found = censusPrimes(lo, hi);
+    const found = compute(lo, hi);
     cache.set(key, found);
     return found;
   };
 }
 
-/** Inclusive distinct count of integers plus primes that fall outside those integers. */
+interface DistinctCensus {
+  count: bigint;
+  overCap: boolean;
+  tooWide: boolean;
+  tooWidePowers: boolean;
+}
+
+/** Inclusive distinct count of integers plus primes and prime powers outside those integers. */
 function distinctCensus(
   pieces: Piece[],
-  census: (lo: bigint, hi: bigint) => PrimeCensus,
-): { count: bigint; overCap: boolean; tooWide: boolean } {
-  const integers = pieces.filter((piece): piece is IntegerPiece => piece.kind !== 'primes');
-  const primeIntervals: Interval[] = pieces
-    .filter((piece): piece is PrimesPiece => piece.kind === 'primes')
-    .map((piece) => [piece.lo, piece.hi]);
+  primeCensus: (lo: bigint, hi: bigint) => PrimeCensus,
+  powerCensus: (lo: bigint, hi: bigint) => PrimeCensus,
+): DistinctCensus {
+  const integers = pieces.filter((piece): piece is IntegerPiece => piece.kind === 'num' || piece.kind === 'range');
   const cover = mergeIntervals(
     integers.map((piece) => (piece.kind === 'num' ? [piece.value, piece.value] : [piece.lo, piece.hi])),
   );
+  const none: DistinctCensus = { count: 0n, overCap: false, tooWide: false, tooWidePowers: false };
+  const primeExtra = countOutside(pieces, 'primes', cover, primeCensus);
+  if (primeExtra === 'tooWide') return { ...none, tooWide: true };
+  if (primeExtra === 'overCap') return { ...none, overCap: true };
+  const powerExtra = countOutside(pieces, 'powers', cover, powerCensus);
+  if (powerExtra === 'tooWide') return { ...none, tooWidePowers: true };
+  if (powerExtra === 'overCap') return { ...none, overCap: true };
+  return { count: mergedCount(integers) + primeExtra + powerExtra, overCap: false, tooWide: false, tooWidePowers: false };
+}
+
+function countOutside(
+  pieces: Piece[],
+  kind: SpecialPiece['kind'],
+  cover: Interval[],
+  census: (lo: bigint, hi: bigint) => PrimeCensus,
+): bigint | 'tooWide' | 'overCap' {
+  const intervals: Interval[] = pieces
+    .filter((piece): piece is SpecialPiece => piece.kind === kind)
+    .map((piece) => [piece.lo, piece.hi]);
   let extra = 0n;
-  for (const [lo, hi] of mergeIntervals(primeIntervals)) {
+  for (const [lo, hi] of mergeIntervals(intervals)) {
     for (const [start, end] of subtractInterval(lo, hi, cover)) {
       const found = census(start, end);
-      if (found.tooWide) return { count: 0n, overCap: false, tooWide: true };
-      if (found.overCap || found.count === null) return { count: 0n, overCap: true, tooWide: false };
+      if (found.tooWide) return 'tooWide';
+      if (found.overCap || found.count === null) return 'overCap';
       extra += found.count;
     }
   }
-  return { count: mergedCount(integers) + extra, overCap: false, tooWide: false };
+  return extra;
 }
 
 function censusPrimes(lo: bigint, hi: bigint): PrimeCensus {
@@ -264,6 +344,131 @@ function censusPrimes(lo: bigint, hi: bigint): PrimeCensus {
   if (found.primes.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
   if (found.finished) return { count: BigInt(found.primes.length), overCap: false, tooWide: false };
   return { count: null, overCap: false, tooWide: true };
+}
+
+/**
+ * p^k with k ≥ 2. Primes themselves are not included. 27 = 3^3 is.
+ * Counted exactly up to the sieve limit; a long span of powers of two is
+ * enough to know the seed cap is exceeded.
+ */
+function censusPrimePowers(lo: bigint, hi: bigint): PrimeCensus {
+  if (hi < lo || hi < 4n) return NO_PRIMES;
+  const start = lo < 4n ? 4n : lo;
+  if (start > hi) return NO_PRIMES;
+
+  if (hi <= BigInt(PRIME_SIEVE_LIMIT)) {
+    return { count: BigInt(primePowerCount(Number(start), Number(hi))), overCap: false, tooWide: false };
+  }
+  if (hi - start <= BigInt(PRIME_SCAN_LIMIT)) {
+    const found = scanPrimePowers(start, hi, Number.MAX_SAFE_INTEGER);
+    return { count: BigInt(found.powers.length), overCap: false, tooWide: false };
+  }
+  if (powersOfTwoInRange(start, hi) > MAX_SEEDS) {
+    return { count: null, overCap: true, tooWide: false };
+  }
+  const found = scanPrimePowers(start, hi, MAX_SEEDS + 1);
+  if (found.powers.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  if (found.finished) return { count: BigInt(found.powers.length), overCap: false, tooWide: false };
+  return { count: null, overCap: false, tooWide: true };
+}
+
+function listPrimePowers(lo: bigint, hi: bigint): bigint[] {
+  if (hi < lo || hi < 4n) return [];
+  const start = lo < 4n ? 4n : lo;
+  if (start > hi) return [];
+  if (hi <= BigInt(PRIME_SIEVE_LIMIT)) return primePowerList(Number(start), Number(hi));
+  return scanPrimePowers(start, hi, Number.MAX_SAFE_INTEGER).powers;
+}
+
+function primePowerCount(lo: number, hi: number): number {
+  return primePowerList(lo, hi).length;
+}
+
+function primePowerList(lo: number, hi: number): bigint[] {
+  if (hi < 4 || hi < lo) return [];
+  const root = Math.floor(Math.sqrt(hi));
+  const composite = sieve(root);
+  const powers: number[] = [];
+  for (let p = 2; p <= root; p++) {
+    if (composite[p]) continue;
+    let value = p * p;
+    while (value <= hi) {
+      if (value >= lo) powers.push(value);
+      if (value > Math.floor(hi / p)) break;
+      value *= p;
+    }
+  }
+  powers.sort((a, b) => a - b);
+  return powers.map((value) => BigInt(value));
+}
+
+function powersOfTwoInRange(lo: bigint, hi: bigint): number {
+  if (hi < 4n || hi < lo) return 0;
+  let value = 4n;
+  if (lo > value) {
+    const floorLog = lo.toString(2).length - 1;
+    value = 1n << BigInt(floorLog);
+    if (value < lo) value <<= 1n;
+    if (value < 4n) value = 4n;
+  }
+  let count = 0;
+  while (value <= hi && count <= MAX_SEEDS + 1) {
+    count += 1;
+    if (value > hi >> 1n) break;
+    value <<= 1n;
+  }
+  return count;
+}
+
+function scanPrimePowers(start: bigint, hi: bigint, stopAt: number): { powers: bigint[]; finished: boolean } {
+  const powers: bigint[] = [];
+  let current = start < 4n ? 4n : start;
+  const budgetEnd = current + BigInt(PRIME_SEARCH_BUDGET);
+  const end = hi - current > BigInt(PRIME_SEARCH_BUDGET) ? budgetEnd : hi;
+  while (current <= end && powers.length < stopAt) {
+    if (isPrimePower(current)) powers.push(current);
+    current += 1n;
+  }
+  return { powers, finished: current > hi };
+}
+
+function isPrimePower(n: bigint): boolean {
+  if (n < 4n) return false;
+  const maxExp = n.toString(2).length - 1;
+  for (let exp = 2; exp <= maxExp; exp++) {
+    const root = integerRoot(n, exp);
+    if (powEquals(root, exp, n) && isPrime(root)) return true;
+  }
+  return false;
+}
+
+function integerRoot(n: bigint, exp: number): bigint {
+  let lo = 1n;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi + 1n) >> 1n;
+    if (powExceeds(mid, exp, n)) hi = mid - 1n;
+    else lo = mid;
+  }
+  return lo;
+}
+
+function powExceeds(base: bigint, exp: number, limit: bigint): boolean {
+  let result = 1n;
+  for (let i = 0; i < exp; i++) {
+    if (base !== 0n && result > limit / base) return true;
+    result *= base;
+  }
+  return false;
+}
+
+function powEquals(base: bigint, exp: number, target: bigint): boolean {
+  let result = 1n;
+  for (let i = 0; i < exp; i++) {
+    if (base !== 0n && result > target / base) return false;
+    result *= base;
+  }
+  return result === target;
 }
 
 /** At least this many primes in [lo, hi], or a smaller under-count. Never over-counts. */
@@ -466,8 +671,14 @@ function expandInOrder(pieces: Piece[]): { seeds: bigint[]; duplicates: number }
       }
       continue;
     }
-    for (const prime of listPrimes(piece.lo, piece.hi)) {
-      duplicates += remember(prime, seeds, seen);
+    if (piece.kind === 'primes') {
+      for (const prime of listPrimes(piece.lo, piece.hi)) {
+        duplicates += remember(prime, seeds, seen);
+      }
+      continue;
+    }
+    for (const power of listPrimePowers(piece.lo, piece.hi)) {
+      duplicates += remember(power, seeds, seen);
     }
   }
 
@@ -511,8 +722,11 @@ function parseIndividuals(pieces: Piece[], rejected: string[]): ParsedSeeds {
     overflow: null,
     reversed: 0,
     emptyPrimes: [],
+    emptyPrimePowers: [],
     tooWide: [],
+    tooWidePowers: [],
     overCap: false,
     primeOnly: false,
+    primePowerOnly: false,
   };
 }

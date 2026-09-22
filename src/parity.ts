@@ -16,9 +16,19 @@ const TERM_LIST_LIMIT = 400;
  * The count is for those seeds only. It is not a claim about every prime.
  */
 export function primeParitySummary(primeCount: number, formCount: number): string {
+  return seedParitySummary(primeCount, formCount, 'prime');
+}
+
+/** How many distinct parity forms the plotted prime-power seeds take. */
+export function primePowerParitySummary(powerCount: number, formCount: number): string {
+  return seedParitySummary(powerCount, formCount, 'prime-power');
+}
+
+function seedParitySummary(count: number, formCount: number, noun: 'prime' | 'prime-power'): string {
   const forms = `${formatParityCount(formCount)} distinct parity ${formCount === 1 ? 'form' : 'forms'}`;
-  if (primeCount === 1) return `This prime seed takes ${forms}.`;
-  return `These ${formatParityCount(primeCount)} prime seeds take ${forms}.`;
+  const plural = noun === 'prime' ? 'prime seeds' : 'prime-power seeds';
+  if (count === 1) return `This ${noun} seed takes ${forms}.`;
+  return `These ${formatParityCount(count)} ${plural} take ${forms}.`;
 }
 
 function formatParityCount(value: number): string {

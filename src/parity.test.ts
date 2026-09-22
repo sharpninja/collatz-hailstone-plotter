@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hailstone } from './collatz';
-import { groupParityForms, parityForm, primeParitySummary } from './parity';
+import { groupParityForms, parityForm, primeParitySummary, primePowerParitySummary } from './parity';
 
 describe('parityForm', () => {
   it('writes the hand-checked identity for 3', () => {
@@ -103,5 +103,7 @@ describe('parityForm', () => {
     expect(primeParitySummary(7, 1)).toBe('These 7 prime seeds take 1 distinct parity form.');
     expect(primeParitySummary(1, 1)).toBe('This prime seed takes 1 distinct parity form.');
     expect(primeParitySummary(2, 2)).toBe('These 2 prime seeds take 2 distinct parity forms.');
+    expect(primePowerParitySummary(8, 8)).toBe('These 8 prime-power seeds take 8 distinct parity forms.');
+    expect(primePowerParitySummary(1, 1)).toBe('This prime-power seed takes 1 distinct parity form.');
   });
 });
