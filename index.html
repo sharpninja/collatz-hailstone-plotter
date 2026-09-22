@@ -131,6 +131,29 @@
               <div id="plot-host" class="plot-host"></div>
               <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
             </div>
+            <div class="player" id="player">
+              <div class="player-row">
+                <button type="button" id="play" disabled>Play</button>
+                <button type="button" id="pause-audio" disabled>Pause</button>
+                <button type="button" id="stop-audio" disabled>Stop</button>
+                <label class="player-field" for="step-ms">ms/step
+                  <input id="step-ms" type="number" inputmode="numeric" min="40" max="600" step="10" value="140" />
+                </label>
+                <label class="check" for="hand-right">
+                  <input id="hand-right" type="checkbox" checked />
+                  <span>Right hand</span>
+                </label>
+                <label class="check" for="hand-left">
+                  <input id="hand-left" type="checkbox" checked />
+                  <span>Left hand</span>
+                </label>
+                <label class="player-field" for="play-seed">Hearing
+                  <select id="play-seed"></select>
+                </label>
+              </div>
+              <div class="meter" aria-hidden="true"><span id="level"></span></div>
+              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. Right hand hits odd-exponent prime powers. Left hand plays the other terms half a step later. Final powers of 2 meet in unison down to 1.</p>
+            </div>
             <p id="plot-note" class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
           </div>
         </section>

@@ -14,6 +14,7 @@ import { fitSeries, type FitResult } from './fit';
 import { groupParityForms, oddPrimePowerParitySummary, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
+import { TrajectoryPlayer, clampStepMs, scoreTrajectory } from './sonify';
 import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
@@ -44,6 +45,20 @@ const patternsBlock = required<HTMLElement>('patterns-block');
 const patternsHeading = required<HTMLHeadingElement>('patterns-heading');
 const patternsNote = required<HTMLParagraphElement>('patterns-note');
 const patterns = required<HTMLDivElement>('patterns');
+const playButton = required<HTMLButtonElement>('play');
+const pauseButton = required<HTMLButtonElement>('pause-audio');
+const stopButton = required<HTMLButtonElement>('stop-audio');
+const stepMsInput = required<HTMLInputElement>('step-ms');
+const rightHandInput = required<HTMLInputElement>('hand-right');
+const leftHandInput = required<HTMLInputElement>('hand-left');
+const playSeedSelect = required<HTMLSelectElement>('play-seed');
+const playStatus = required<HTMLParagraphElement>('play-status');
+const levelBar = required<HTMLSpanElement>('level');
+const playerRoot = required<HTMLDivElement>('player');
+const player = new TrajectoryPlayer();
+
+const PLAY_HINT =
+  'Play sounds one seed. Right hand hits odd-exponent prime powers, a little louder. Left hand plays the other terms half a step later, softer. Final powers of 2 meet in unison and walk down to 1. Pitch is log₂ of the value, on a C-major pentatonic from C2 to C6. Exploratory, not a proof.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
@@ -111,7 +126,39 @@ fitButton.addEventListener('click', () => {
   scheduleRender();
 });
 
+playButton.addEventListener('click', () => {
+  if (player.state === 'paused') {
+    const trajectory = selectedTrajectory();
+    if (!trajectory) return;
+    player.play(scoreTrajectory(trajectory), readStepMs(), readHands(), playerHooks());
+    syncTransport();
+    return;
+  }
+  startPlayback();
+});
+
+pauseButton.addEventListener('click', () => {
+  player.pause();
+  syncTransport();
+});
+
+stopButton.addEventListener('click', () => {
+  player.stop();
+  levelBar.style.width = '0';
+  syncTransport();
+});
+
+playSeedSelect.addEventListener('change', () => {
+  if (player.state !== 'idle') {
+    player.stop();
+    levelBar.style.width = '0';
+  }
+  syncTransport();
+});
+
 clearButton.addEventListener('click', () => {
+  player.stop();
+  levelBar.style.width = '0';
   seedsInput.value = '';
   maxInput.value = '10000';
   logInput.checked = false;
@@ -125,6 +172,7 @@ clearButton.addEventListener('click', () => {
   renderLegend(null);
   renderPatterns(null);
   resetFit();
+  syncTransport();
   scheduleRender();
   downloadButton.disabled = true;
   fitButton.disabled = true;
@@ -245,6 +293,8 @@ function generate(): void {
     return;
   }
 
+  player.stop();
+  levelBar.style.width = '0';
   lastParsed = parsed;
   trajectories = parsed.seeds.map((seed) => hailstone(seed, maxIterations));
   downloadButton.disabled = false;
@@ -253,10 +303,85 @@ function generate(): void {
   showStatus();
   renderLegend(trajectories);
   renderPatterns(trajectories);
+  syncTransport();
   scheduleRender();
 }
 
+function selectedTrajectory(): Trajectory | null {
+  if (!trajectories || trajectories.length === 0) return null;
+  const index = Number(playSeedSelect.value);
+  if (!Number.isInteger(index) || index < 0 || index >= trajectories.length) return trajectories[0];
+  return trajectories[index];
+}
+
+function readStepMs(): number {
+  return clampStepMs(Number(stepMsInput.value));
+}
+
+function readHands(): { right: boolean; left: boolean } {
+  return { right: rightHandInput.checked, left: leftHandInput.checked };
+}
+
+function playerHooks(): { onFrame: (frame: { step: number; steps: number; level: number }) => void; onEnded: () => void } {
+  return {
+    onFrame: (frame) => {
+      const trajectory = selectedTrajectory();
+      const prefix = trajectory ? `${formatExact(trajectory.seed)} · ` : '';
+      playStatus.textContent = `${prefix}Step ${formatCount(frame.step)} of ${formatCount(frame.steps)}.`;
+      levelBar.style.width = `${Math.round(frame.level * 100)}%`;
+      updateTransportButtons();
+    },
+    onEnded: () => {
+      levelBar.style.width = '0';
+      syncTransport();
+    },
+  };
+}
+
+function startPlayback(): void {
+  const trajectory = selectedTrajectory();
+  if (!trajectory) return;
+  if (!rightHandInput.checked && !leftHandInput.checked) {
+    playStatus.textContent = 'Turn on the right hand, the left hand, or both.';
+    return;
+  }
+  const score = scoreTrajectory(trajectory);
+  player.play(score, readStepMs(), readHands(), playerHooks());
+  const clipped = score.truncated ? ` Playing the first ${formatCount(score.notes.length)} of ${formatCount(score.totalSteps)} steps.` : '';
+  playStatus.textContent = `Playing ${formatExact(trajectory.seed)}.${clipped}`;
+  syncTransport();
+}
+
+function updateTransportButtons(): void {
+  const busy = player.state === 'playing' || player.state === 'starting' || player.state === 'paused';
+  const hasSeeds = (trajectories?.length ?? 0) > 0;
+  playButton.disabled = !hasSeeds || player.state === 'playing' || player.state === 'starting';
+  pauseButton.disabled = player.state !== 'playing';
+  stopButton.disabled = !busy;
+  playSeedSelect.disabled = !hasSeeds;
+  playerRoot.dataset.state = player.state;
+}
+
+function syncTransport(): void {
+  const busy = player.state === 'playing' || player.state === 'starting' || player.state === 'paused';
+  updateTransportButtons();
+  const previous = playSeedSelect.value;
+  playSeedSelect.replaceChildren();
+  trajectories?.forEach((trajectory, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = formatExact(trajectory.seed);
+    playSeedSelect.append(option);
+  });
+  if (previous && [...playSeedSelect.options].some((option) => option.value === previous)) {
+    playSeedSelect.value = previous;
+  }
+  if (!busy) playStatus.textContent = PLAY_HINT;
+}
+
 function abandonPlot(): void {
+  player.stop();
+  levelBar.style.width = '0';
   trajectories = null;
   view = null;
   downloadButton.disabled = true;
@@ -264,6 +389,7 @@ function abandonPlot(): void {
   resetFit();
   renderPatterns(null);
   renderLegend(null);
+  syncTransport();
   scheduleRender();
 }
 

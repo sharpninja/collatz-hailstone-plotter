@@ -380,6 +380,73 @@ button:disabled {
   min-height: 440px;
 }
 
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.player-row button {
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  padding: 8px 14px;
+  color: var(--text);
+}
+
+.player-row button:hover:not(:disabled) { border-color: rgba(226, 182, 87, 0.55); }
+
+.player-row button:disabled { opacity: 0.45; }
+
+#play:not(:disabled) {
+  border-color: rgba(226, 182, 87, 0.7);
+  color: var(--accent, #e2b657);
+}
+
+.player-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.player-field input,
+.player-field select {
+  width: auto;
+  min-width: 4.5rem;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  padding: 6px 8px;
+}
+
+.player .check { margin-top: 0; }
+
+.meter {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(244, 239, 230, 0.08);
+  overflow: hidden;
+}
+
+#level {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #e2b657;
+}
+
 .empty, .plot-host { position: absolute; inset: 0; }
 
 .empty {
