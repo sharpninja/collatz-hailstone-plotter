@@ -44,9 +44,16 @@ export interface PngFit {
   predict: (iteration: number) => number;
   start: number;
   end: number;
+  /** Peak Collatz value, used when the chart is in align / normalize mode. */
+  peak?: number;
 }
 
-export function renderPng(trajectories: Trajectory[], logY: boolean, fits: PngFit[] = []): HTMLCanvasElement {
+export function renderPng(
+  trajectories: Trajectory[],
+  logY: boolean,
+  fits: PngFit[] = [],
+  align = false,
+): HTMLCanvasElement {
   const scale = 2;
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_W * scale;
@@ -72,7 +79,11 @@ export function renderPng(trajectories: Trajectory[], logY: boolean, fits: PngFi
 
   context.fillStyle = muted;
   context.font = '15px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
-  const axisNote = logY ? 'logarithmic value axis' : 'linear value axis';
+  const axisNote = align
+    ? 'axes normalized to each path’s length and peak'
+    : logY
+      ? 'logarithmic value axis'
+      : 'linear value axis';
   const fitNote = fits.length > 0 ? ' Dashed curve: visual fit of the samples.' : '';
   context.fillText(
     `Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.${fitNote}`,
@@ -90,7 +101,7 @@ export function renderPng(trajectories: Trajectory[], logY: boolean, fits: PngFi
   roundRect(context, chartX, chartY, chartW, chartH, 16);
   context.fill();
 
-  const layout = buildLayout(trajectories, { width: chartW, height: chartH, logY });
+  const layout = buildLayout(trajectories, { width: chartW, height: chartH, logY, align });
   const overlays: FitPolyline[] = buildFitPolylines(layout, fits);
   context.save();
   context.translate(chartX, chartY);
@@ -153,8 +164,8 @@ function roundRect(
   ctx.closePath();
 }
 
-export function downloadPng(trajectories: Trajectory[], logY: boolean, fits: PngFit[] = []): void {
-  const canvas = renderPng(trajectories, logY, fits);
+export function downloadPng(trajectories: Trajectory[], logY: boolean, fits: PngFit[] = [], align = false): void {
+  const canvas = renderPng(trajectories, logY, fits, align);
   canvas.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

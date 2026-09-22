@@ -177,6 +177,57 @@ describe('buildLayout', () => {
     expect(last.x).toBeCloseTo(dataToSvg(layout, layout.series[0].steps, 100).x);
   });
 
+  it('shares one iteration scale and one value scale across seeds', () => {
+    const short = hailstone(8n, 100);
+    const tall = hailstone(27n, 10_000);
+    const layout = buildLayout([short, tall], { width: 800, height: 480, logY: false });
+    expect(layout.align).toBe(false);
+    const endShort = layout.series[0].samples.at(-1)!;
+    const endTall = layout.series[1].samples.at(-1)!;
+    expect(endShort.exact).toBe(1n);
+    expect(endTall.exact).toBe(1n);
+    expect(endShort.y).toBeCloseTo(endTall.y, 5);
+    expect(layout.series[0].samples[0].x).toBeCloseTo(layout.series[1].samples[0].x, 5);
+    expect(layout.series[0].samples[3].x).toBeCloseTo(layout.series[1].samples[3].x, 5);
+    const peakShort = layout.series[0].samples.find((sample) => sample.peak)!;
+    const peakTall = layout.series[1].samples.find((sample) => sample.peak)!;
+    expect(peakTall.exact).toBeGreaterThan(peakShort.exact);
+    expect(peakTall.y).toBeLessThan(peakShort.y);
+    expect(layout.xLabel).toBe('Iteration');
+    expect(layout.yLabel).toBe('Value');
+  });
+
+  it('normalizes each series to its own length and peak', () => {
+    const short = hailstone(8n, 100);
+    const tall = hailstone(27n, 10_000);
+    const layout = buildLayout([short, tall], { width: 800, height: 480, logY: false, align: true });
+    const peakShort = layout.series[0].samples.find((sample) => sample.peak)!;
+    const peakTall = layout.series[1].samples.find((sample) => sample.peak)!;
+    expect(peakShort.y).toBeCloseTo(peakTall.y, 4);
+    expect(peakShort.y).toBeCloseTo(layout.plot.y, 4);
+    const endShort = layout.series[0].samples.at(-1)!;
+    const endTall = layout.series[1].samples.at(-1)!;
+    expect(endShort.x).toBeCloseTo(endTall.x, 4);
+    expect(endShort.x).toBeCloseTo(layout.plot.x + layout.plot.w, 4);
+    expect(endShort.y).toBeGreaterThan(peakShort.y);
+    expect(layout.series[0].samples[0].x).toBeCloseTo(layout.series[1].samples[0].x, 4);
+    expect(layout.xLabel).toBe('Progress');
+    expect(layout.yLabel).toBe('Value / peak');
+    for (const series of layout.series) {
+      for (const sample of series.samples) {
+        const point = dataToSvg(layout, sample.step, sample.value, {
+          steps: series.steps,
+          peak: Number(series.peak),
+        });
+        expect(point.x).toBeCloseTo(sample.x);
+        expect(point.y).toBeCloseTo(sample.y);
+      }
+    }
+    const hit = hitTest(layout, endTall.x - 1, layout.plot.y + layout.plot.h / 2);
+    expect(hit?.align).toBe(true);
+    expect(hit?.entries.map((entry) => entry.exact)).toEqual([1n, 1n]);
+  });
+
   it('plots a single point at 1 without a curve', () => {
     const layout = buildLayout([hailstone(1n, 10)], { width: 640, height: 400, logY: false });
     expect(layout.series[0].samples).toHaveLength(1);

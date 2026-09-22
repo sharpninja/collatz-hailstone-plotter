@@ -11,7 +11,7 @@ import {
 } from './chart';
 import { downloadPng, type PngFit } from './export';
 import { fitSeries, type FitResult } from './fit';
-import { parityForm, type ParityForm } from './parity';
+import { groupParityForms, parityForm, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
 import {
@@ -26,6 +26,7 @@ import {
 const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
 const logInput = required<HTMLInputElement>('log-scale');
+const alignInput = required<HTMLInputElement>('align-plots');
 const form = required<HTMLFormElement>('controls');
 const message = required<HTMLDivElement>('form-message');
 const legend = required<HTMLDivElement>('legend');
@@ -38,6 +39,10 @@ const clearButton = required<HTMLButtonElement>('clear');
 const fitBlock = required<HTMLElement>('fit-block');
 const fitResults = required<HTMLDivElement>('fit-results');
 const plotNote = required<HTMLParagraphElement>('plot-note');
+const patternsBlock = required<HTMLElement>('patterns-block');
+const patternsHeading = required<HTMLHeadingElement>('patterns-heading');
+const patternsNote = required<HTMLParagraphElement>('patterns-note');
+const patterns = required<HTMLDivElement>('patterns');
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
@@ -79,9 +84,15 @@ logInput.addEventListener('change', () => {
   scheduleRender();
 });
 
+alignInput.addEventListener('change', () => {
+  if (!trajectories) return;
+  showStatus();
+  scheduleRender();
+});
+
 downloadButton.addEventListener('click', () => {
   if (!trajectories || trajectories.length === 0) return;
-  downloadPng(trajectories, logInput.checked, pngFits(fits));
+  downloadPng(trajectories, logInput.checked, pngFits(fits), alignInput.checked);
 });
 
 fitButton.addEventListener('click', () => {
@@ -95,6 +106,7 @@ clearButton.addEventListener('click', () => {
   seedsInput.value = '';
   maxInput.value = '10000';
   logInput.checked = false;
+  alignInput.checked = false;
   trajectories = null;
   lastParsed = null;
   view = null;
@@ -102,6 +114,7 @@ clearButton.addEventListener('click', () => {
   hideTooltip();
   setMessage([]);
   renderLegend(null);
+  renderPatterns(null);
   resetFit();
   scheduleRender();
   downloadButton.disabled = true;
@@ -148,11 +161,7 @@ function generate(): void {
   const parsed = parseSeeds(seedsInput.value);
   const maxIterations = parseMaxIterations(maxInput.value);
   if (parsed.overflow !== null) {
-    trajectories = null;
-    view = null;
-    downloadButton.disabled = true;
-    renderLegend(null);
-    scheduleRender();
+    abandonPlot();
     setMessage([
       {
         kind: 'error',
@@ -163,13 +172,7 @@ function generate(): void {
     return;
   }
   if (parsed.seeds.length === 0) {
-    trajectories = null;
-    view = null;
-    downloadButton.disabled = true;
-    fitButton.disabled = true;
-    resetFit();
-    renderLegend(null);
-    scheduleRender();
+    abandonPlot();
     const lead =
       parsed.rejected.length > 0
         ? 'None of those tokens are positive integers.'
@@ -203,6 +206,18 @@ function generate(): void {
   resetFit();
   showStatus();
   renderLegend(trajectories);
+  renderPatterns(trajectories);
+  scheduleRender();
+}
+
+function abandonPlot(): void {
+  trajectories = null;
+  view = null;
+  downloadButton.disabled = true;
+  fitButton.disabled = true;
+  resetFit();
+  renderPatterns(null);
+  renderLegend(null);
   scheduleRender();
 }
 
@@ -212,18 +227,24 @@ function showStatus(): void {
     { kind: 'ok', text: statusLine(trajectories) },
     ...warningParts(lastParsed, trajectories),
   ];
-  const hint = scaleHint(trajectories, logInput.checked);
+  const hint = scaleHint(trajectories, logInput.checked, alignInput.checked);
   if (hint) parts.push({ kind: 'warn', text: hint });
+  if (alignInput.checked && trajectories.length > 1) {
+    parts.push({
+      kind: 'warn',
+      text: 'Align is on: horizontal position is each path’s progress, and height is its value divided by its peak.',
+    });
+  }
   setMessage(parts);
 }
 
-function scaleHint(series: Trajectory[], logY: boolean): string | null {
-  if (logY || series.length < 2) return null;
+function scaleHint(series: Trajectory[], logY: boolean, align: boolean): string | null {
+  if (logY || align || series.length < 2) return null;
   const peaks = series.map((trajectory) => peakValue(trajectory.values));
   const tallest = peaks.reduce((best, peak) => (peak > best ? peak : best));
   const shortest = peaks.reduce((best, peak) => (peak < best ? peak : best));
   if (shortest < 1n || tallest / shortest < 40n) return null;
-  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on the logarithmic axis to compare them.';
+  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on Align / normalize to compare shapes, or the logarithmic axis to compare true values.';
 }
 
 function scheduleRender(): void {
@@ -243,13 +264,21 @@ function render(): void {
   const width = Math.floor(plotHost.clientWidth);
   const height = Math.floor(plotHost.clientHeight);
   if (width < 40 || height < 40) return;
-  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
+  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${alignInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
   if (key === paintedKey && view) return;
   paintedKey = key;
   hideTooltip();
   emptyState.hidden = true;
-  const layout = buildLayout(trajectories, { width, height, logY: logInput.checked });
-  view = renderChart(plotHost, layout, statusLine(trajectories), buildFitPolylines(layout, pngFits(fits)));
+  const layout = buildLayout(trajectories, {
+    width,
+    height,
+    logY: logInput.checked,
+    align: alignInput.checked,
+  });
+  const summary = alignInput.checked
+    ? `${statusLine(trajectories)} Axes show each path’s progress and share of its peak.`
+    : statusLine(trajectories);
+  view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)));
 }
 
 function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
@@ -272,7 +301,13 @@ function pngFits(series: FitOutcome[] | null): PngFit[] {
   const overlays: PngFit[] = [];
   for (const fit of series) {
     if (!fit.result.ok) continue;
-    overlays.push({ color: fit.color, predict: fit.result.predict, start: 0, end: fit.end });
+    overlays.push({
+      color: fit.color,
+      predict: fit.result.predict,
+      start: 0,
+      end: fit.end,
+      peak: Number(fit.peak),
+    });
   }
   return overlays;
 }
@@ -498,6 +533,48 @@ function renderLegend(series: Trajectory[] | null): void {
   });
 }
 
+function renderPatterns(series: Trajectory[] | null): void {
+  patterns.replaceChildren();
+  if (!series || series.length < 2) {
+    patternsBlock.hidden = true;
+    patternsHeading.textContent = 'Distinct functions';
+    patternsNote.textContent = '';
+    return;
+  }
+  const groups = groupParityForms(series.map((trajectory) => parityForm(trajectory.values, trajectory)));
+  const colors = new Map(
+    series.map((trajectory, index) => [trajectory.seed.toString(), SERIES_COLORS[index % SERIES_COLORS.length]]),
+  );
+  patternsBlock.hidden = false;
+  const noun = groups.length === 1 ? 'pattern' : 'patterns';
+  patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;
+  patternsNote.textContent =
+    'Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. A different seed can take a different pattern. This describes the paths on the chart. It is not a proof for every starting value.';
+  groups.forEach((group, index) => patterns.append(renderPatternCard(group, index, colors)));
+}
+
+function renderPatternCard(group: ParityGroup, index: number, colors: Map<string, string>): HTMLElement {
+  const card = document.createElement('article');
+  card.className = 'fit-card';
+  const title = document.createElement('p');
+  title.className = 'fit-kicker';
+  title.textContent = `Function ${index + 1}`;
+  const seeds = document.createElement('p');
+  seeds.className = 'pattern-seeds';
+  seeds.append(document.createTextNode('Seeds: '));
+  group.seeds.forEach((seed, seedIndex) => {
+    if (seedIndex > 0) seeds.append(document.createTextNode(', '));
+    const chip = document.createElement('span');
+    chip.className = 'pattern-seed';
+    chip.style.color = colors.get(seed.toString()) ?? '';
+    chip.textContent = formatExact(seed);
+    seeds.append(chip);
+  });
+  card.append(title, paragraph('fit-expr', group.expression), paragraph('fit-sub', group.parameters), seeds);
+  if (group.solvedForSeed) card.append(paragraph('fit-sub', group.solvedForSeed));
+  return card;
+}
+
 function setMessage(parts: Array<{ kind: 'ok' | 'warn' | 'error'; text: string }>): void {
   message.replaceChildren();
   if (parts.length === 0) return;
@@ -513,7 +590,7 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
   tooltip.replaceChildren();
   const heading = document.createElement('p');
   heading.className = 'tip-step';
-  heading.textContent = `Iteration ${formatCount(hit.step)}`;
+  heading.textContent = hit.align ? 'Aligned progress' : `Iteration ${formatCount(hit.step)}`;
   const list = document.createElement('ul');
   for (const entry of hit.entries) {
     const item = document.createElement('li');
@@ -525,7 +602,7 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
     seed.textContent = formatExact(entry.seed);
     const value = document.createElement('span');
     value.className = 'tip-value';
-    value.textContent = formatExact(entry.exact);
+    value.textContent = hit.align ? `${formatCount(entry.step)} · ${formatExact(entry.exact)}` : formatExact(entry.exact);
     if (entry.peak) {
       const tag = document.createElement('span');
       tag.className = 'tip-peak';
