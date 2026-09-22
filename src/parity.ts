@@ -11,6 +11,40 @@
 /** Paths longer than this still report the final identity, without a line per term. */
 const TERM_LIST_LIMIT = 400;
 
+/**
+ * How many distinct parity forms the plotted prime seeds take.
+ * The count is for those seeds only. It is not a claim about every prime.
+ */
+export function primeParitySummary(primeCount: number, formCount: number): string {
+  return seedParitySummary(primeCount, formCount, 'prime');
+}
+
+/** How many distinct parity forms the plotted prime-power seeds take. */
+export function primePowerParitySummary(powerCount: number, formCount: number): string {
+  return seedParitySummary(powerCount, formCount, 'prime-power');
+}
+
+/** How many distinct parity forms the plotted odd-exponent prime-power seeds take. */
+export function oddPrimePowerParitySummary(powerCount: number, formCount: number): string {
+  return seedParitySummary(powerCount, formCount, 'odd-exponent prime-power');
+}
+
+function seedParitySummary(
+  count: number,
+  formCount: number,
+  noun: 'prime' | 'prime-power' | 'odd-exponent prime-power',
+): string {
+  const forms = `${formatParityCount(formCount)} distinct parity ${formCount === 1 ? 'form' : 'forms'}`;
+  const plural =
+    noun === 'prime' ? 'prime seeds' : noun === 'prime-power' ? 'prime-power seeds' : 'odd-exponent prime-power seeds';
+  if (count === 1) return `This ${noun} seed takes ${forms}.`;
+  return `These ${formatParityCount(count)} ${plural} take ${forms}.`;
+}
+
+function formatParityCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 export interface ParityGroup {
   oddSteps: number;
   divisions: number;

@@ -49,14 +49,16 @@
                 rows="3"
                 spellcheck="false"
                 autocapitalize="off"
-                placeholder="e.g. 27 or 20..27"
+                placeholder="e.g. 27, 20..27, or primes:20..30"
               >27</textarea>
-              <p class="hint">Positive integers, separated by commas or spaces. Ranges like 20..27 include both ends. Up to 12 seeds.</p>
+              <p class="hint">Positive integers, commas, or spaces. 20..27 is every integer. primes:20..30 is primes only. oddprimepowers:8..32 keeps prime powers with an odd exponent (primes, and 27 = 3³), a stress-test sample. Up to 12 seeds.</p>
             </div>
 
             <div class="examples" role="group" aria-label="Examples">
               <button type="button" data-example="27" data-log="off">27</button>
               <button type="button" data-example="20..27" data-log="on">20..27</button>
+              <button type="button" data-example="primes:20..50" data-log="on">primes:20..50</button>
+              <button type="button" data-example="oddprimepowers:8..32" data-log="on">oddprimepowers:8..32</button>
               <button type="button" data-example="25, 26, 27" data-log="on">25, 26, 27</button>
               <button type="button" data-example="12, 19, 27" data-log="on">12, 19, 27</button>
             </div>
@@ -77,6 +79,12 @@
               <span>Align / normalize</span>
             </label>
             <p class="hint">Stretch each path to its own length and peak. Off keeps true iterations and Collatz values on one shared pair of axes.</p>
+
+            <label class="check" for="mark-beats">
+              <input id="mark-beats" type="checkbox" checked />
+              <span>Mark beats</span>
+            </label>
+            <p class="hint">Rings mark terms that are prime powers with an odd exponent. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
 
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
@@ -122,6 +130,29 @@
               </div>
               <div id="plot-host" class="plot-host"></div>
               <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
+            </div>
+            <div class="player" id="player">
+              <div class="player-row">
+                <button type="button" id="play" disabled>Play</button>
+                <button type="button" id="pause-audio" disabled>Pause</button>
+                <button type="button" id="stop-audio" disabled>Stop</button>
+                <label class="player-field" for="step-ms">ms/step
+                  <input id="step-ms" type="number" inputmode="numeric" min="40" max="600" step="10" value="140" />
+                </label>
+                <label class="check" for="hand-right">
+                  <input id="hand-right" type="checkbox" checked />
+                  <span>Right hand</span>
+                </label>
+                <label class="check" for="hand-left">
+                  <input id="hand-left" type="checkbox" checked />
+                  <span>Left hand</span>
+                </label>
+                <label class="player-field" for="play-seed">Hearing
+                  <select id="play-seed"></select>
+                </label>
+              </div>
+              <div class="meter" aria-hidden="true"><span id="level"></span></div>
+              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward. Each climb swells and each partial descent eases before the next swell. The line rests only on the final powers of 2. Original figures, exploratory, not a proof.</p>
             </div>
             <p id="plot-note" class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
           </div>

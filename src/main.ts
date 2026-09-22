@@ -11,9 +11,10 @@ import {
 } from './chart';
 import { downloadPng, type PngFit } from './export';
 import { fitSeries, type FitResult } from './fit';
-import { groupParityForms, parityForm, type ParityForm, type ParityGroup } from './parity';
+import { groupParityForms, oddPrimePowerParitySummary, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
+import { TrajectoryPlayer, clampStepMs, scoreTrajectory } from './sonify';
 import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
@@ -27,6 +28,7 @@ const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
 const logInput = required<HTMLInputElement>('log-scale');
 const alignInput = required<HTMLInputElement>('align-plots');
+const beatsInput = required<HTMLInputElement>('mark-beats');
 const form = required<HTMLFormElement>('controls');
 const message = required<HTMLDivElement>('form-message');
 const legend = required<HTMLDivElement>('legend');
@@ -43,6 +45,20 @@ const patternsBlock = required<HTMLElement>('patterns-block');
 const patternsHeading = required<HTMLHeadingElement>('patterns-heading');
 const patternsNote = required<HTMLParagraphElement>('patterns-note');
 const patterns = required<HTMLDivElement>('patterns');
+const playButton = required<HTMLButtonElement>('play');
+const pauseButton = required<HTMLButtonElement>('pause-audio');
+const stopButton = required<HTMLButtonElement>('stop-audio');
+const stepMsInput = required<HTMLInputElement>('step-ms');
+const rightHandInput = required<HTMLInputElement>('hand-right');
+const leftHandInput = required<HTMLInputElement>('hand-left');
+const playSeedSelect = required<HTMLSelectElement>('play-seed');
+const playStatus = required<HTMLParagraphElement>('play-status');
+const levelBar = required<HTMLSpanElement>('level');
+const playerRoot = required<HTMLDivElement>('player');
+const player = new TrajectoryPlayer();
+
+const PLAY_HINT =
+  'Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
@@ -50,6 +66,8 @@ const PLOT_NOTE_FIT =
   'The curve passes through every term. The dashed line is only a visual fit of those samples. The sidebar gives the exact form in N for each seed’s parity pattern. Hover a step to read a term.';
 const PLOT_NOTE_EXACT =
   'The curve passes through every term. The sidebar gives the exact form in N for this seed’s parity pattern. Hover a step to read a term.';
+const BEAT_NOTE =
+  'Rings mark beats: terms that are prime powers with an odd exponent. The terms between them are the rest of the path.';
 
 interface FitOutcome {
   seed: bigint;
@@ -90,9 +108,15 @@ alignInput.addEventListener('change', () => {
   scheduleRender();
 });
 
+beatsInput.addEventListener('change', () => {
+  applyPlotNote();
+  if (!trajectories) return;
+  scheduleRender();
+});
+
 downloadButton.addEventListener('click', () => {
   if (!trajectories || trajectories.length === 0) return;
-  downloadPng(trajectories, logInput.checked, pngFits(fits), alignInput.checked);
+  downloadPng(trajectories, logInput.checked, pngFits(fits), alignInput.checked, beatsInput.checked);
 });
 
 fitButton.addEventListener('click', () => {
@@ -102,7 +126,39 @@ fitButton.addEventListener('click', () => {
   scheduleRender();
 });
 
+playButton.addEventListener('click', () => {
+  if (player.state === 'paused') {
+    const trajectory = selectedTrajectory();
+    if (!trajectory) return;
+    player.play(scoreTrajectory(trajectory), readStepMs(), readHands(), playerHooks());
+    syncTransport();
+    return;
+  }
+  startPlayback();
+});
+
+pauseButton.addEventListener('click', () => {
+  player.pause();
+  syncTransport();
+});
+
+stopButton.addEventListener('click', () => {
+  player.stop();
+  levelBar.style.width = '0';
+  syncTransport();
+});
+
+playSeedSelect.addEventListener('change', () => {
+  if (player.state !== 'idle') {
+    player.stop();
+    levelBar.style.width = '0';
+  }
+  syncTransport();
+});
+
 clearButton.addEventListener('click', () => {
+  player.stop();
+  levelBar.style.width = '0';
   seedsInput.value = '';
   maxInput.value = '10000';
   logInput.checked = false;
@@ -116,6 +172,7 @@ clearButton.addEventListener('click', () => {
   renderLegend(null);
   renderPatterns(null);
   resetFit();
+  syncTransport();
   scheduleRender();
   downloadButton.disabled = true;
   fitButton.disabled = true;
@@ -160,6 +217,43 @@ generate();
 function generate(): void {
   const parsed = parseSeeds(seedsInput.value);
   const maxIterations = parseMaxIterations(maxInput.value);
+  if (parsed.emptyPrimes.length > 0 || parsed.emptyPrimePowers.length > 0 || parsed.emptyOddPrimePowers.length > 0) {
+    abandonPlot();
+    const text = [
+      parsed.emptyPrimes.length > 0 ? emptySetMessage(parsed.emptyPrimes, 'primes') : '',
+      parsed.emptyPrimePowers.length > 0 ? emptySetMessage(parsed.emptyPrimePowers, 'prime powers') : '',
+      parsed.emptyOddPrimePowers.length > 0
+        ? emptySetMessage(parsed.emptyOddPrimePowers, 'odd-exponent prime powers')
+        : '',
+    ]
+      .filter((line) => line.length > 0)
+      .join(' ');
+    setMessage([{ kind: 'error', text }, ...warningParts(parsed, [])]);
+    return;
+  }
+  if (parsed.tooWide.length > 0 || parsed.tooWidePowers.length > 0 || parsed.tooWideOddPowers.length > 0) {
+    abandonPlot();
+    const text = [
+      parsed.tooWide.length > 0 ? tooWideMessage(parsed.tooWide, 'prime') : '',
+      parsed.tooWidePowers.length > 0 ? tooWideMessage(parsed.tooWidePowers, 'prime-power') : '',
+      parsed.tooWideOddPowers.length > 0 ? tooWideMessage(parsed.tooWideOddPowers, 'odd-exponent prime-power') : '',
+    ]
+      .filter((line) => line.length > 0)
+      .join(' ');
+    setMessage([{ kind: 'error', text }, ...warningParts(parsed, [])]);
+    return;
+  }
+  if (parsed.overCap) {
+    abandonPlot();
+    setMessage([
+      {
+        kind: 'error',
+        text: `That includes more than ${MAX_SEEDS} seeds. At most ${MAX_SEEDS} can be plotted.`,
+      },
+      ...warningParts(parsed, []),
+    ]);
+    return;
+  }
   if (parsed.overflow !== null) {
     abandonPlot();
     setMessage([
@@ -199,6 +293,8 @@ function generate(): void {
     return;
   }
 
+  player.stop();
+  levelBar.style.width = '0';
   lastParsed = parsed;
   trajectories = parsed.seeds.map((seed) => hailstone(seed, maxIterations));
   downloadButton.disabled = false;
@@ -207,10 +303,85 @@ function generate(): void {
   showStatus();
   renderLegend(trajectories);
   renderPatterns(trajectories);
+  syncTransport();
   scheduleRender();
 }
 
+function selectedTrajectory(): Trajectory | null {
+  if (!trajectories || trajectories.length === 0) return null;
+  const index = Number(playSeedSelect.value);
+  if (!Number.isInteger(index) || index < 0 || index >= trajectories.length) return trajectories[0];
+  return trajectories[index];
+}
+
+function readStepMs(): number {
+  return clampStepMs(Number(stepMsInput.value));
+}
+
+function readHands(): { right: boolean; left: boolean } {
+  return { right: rightHandInput.checked, left: leftHandInput.checked };
+}
+
+function playerHooks(): { onFrame: (frame: { step: number; steps: number; level: number }) => void; onEnded: () => void } {
+  return {
+    onFrame: (frame) => {
+      const trajectory = selectedTrajectory();
+      const prefix = trajectory ? `${formatExact(trajectory.seed)} · ` : '';
+      playStatus.textContent = `${prefix}Step ${formatCount(frame.step)} of ${formatCount(frame.steps)}.`;
+      levelBar.style.width = `${Math.round(frame.level * 100)}%`;
+      updateTransportButtons();
+    },
+    onEnded: () => {
+      levelBar.style.width = '0';
+      syncTransport();
+    },
+  };
+}
+
+function startPlayback(): void {
+  const trajectory = selectedTrajectory();
+  if (!trajectory) return;
+  if (!rightHandInput.checked && !leftHandInput.checked) {
+    playStatus.textContent = 'Turn on the right hand, the left hand, or both.';
+    return;
+  }
+  const score = scoreTrajectory(trajectory);
+  player.play(score, readStepMs(), readHands(), playerHooks());
+  const clipped = score.truncated ? ` Playing the first ${formatCount(score.notes.length)} of ${formatCount(score.totalSteps)} steps.` : '';
+  playStatus.textContent = `Playing ${formatExact(trajectory.seed)}.${clipped}`;
+  syncTransport();
+}
+
+function updateTransportButtons(): void {
+  const busy = player.state === 'playing' || player.state === 'starting' || player.state === 'paused';
+  const hasSeeds = (trajectories?.length ?? 0) > 0;
+  playButton.disabled = !hasSeeds || player.state === 'playing' || player.state === 'starting';
+  pauseButton.disabled = player.state !== 'playing';
+  stopButton.disabled = !busy;
+  playSeedSelect.disabled = !hasSeeds;
+  playerRoot.dataset.state = player.state;
+}
+
+function syncTransport(): void {
+  const busy = player.state === 'playing' || player.state === 'starting' || player.state === 'paused';
+  updateTransportButtons();
+  const previous = playSeedSelect.value;
+  playSeedSelect.replaceChildren();
+  trajectories?.forEach((trajectory, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = formatExact(trajectory.seed);
+    playSeedSelect.append(option);
+  });
+  if (previous && [...playSeedSelect.options].some((option) => option.value === previous)) {
+    playSeedSelect.value = previous;
+  }
+  if (!busy) playStatus.textContent = PLAY_HINT;
+}
+
 function abandonPlot(): void {
+  player.stop();
+  levelBar.style.width = '0';
   trajectories = null;
   view = null;
   downloadButton.disabled = true;
@@ -218,6 +389,7 @@ function abandonPlot(): void {
   resetFit();
   renderPatterns(null);
   renderLegend(null);
+  syncTransport();
   scheduleRender();
 }
 
@@ -267,7 +439,7 @@ function render(): void {
   const width = Math.floor(plotHost.clientWidth);
   const height = Math.floor(plotHost.clientHeight);
   if (width < 40 || height < 40) return;
-  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${alignInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
+  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${alignInput.checked ? 1 : 0}|${beatsInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
   if (key === paintedKey && view) return;
   paintedKey = key;
   hideTooltip();
@@ -281,7 +453,7 @@ function render(): void {
   const summary = alignInput.checked
     ? `${statusLine(trajectories)} Axes show each path’s progress and share of its peak.`
     : statusLine(trajectories);
-  view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)));
+  view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)), beatsInput.checked);
 }
 
 function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
@@ -319,7 +491,12 @@ function resetFit(): void {
   fits = null;
   fitBlock.hidden = true;
   fitResults.replaceChildren();
-  plotNote.textContent = PLOT_NOTE;
+  applyPlotNote();
+}
+
+function applyPlotNote(): void {
+  const base = !fits || fits.length === 0 ? PLOT_NOTE : fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE_EXACT;
+  plotNote.textContent = beatsInput.checked ? `${base} ${BEAT_NOTE}` : base;
 }
 
 function renderFitPanel(): void {
@@ -329,7 +506,32 @@ function renderFitPanel(): void {
     return;
   }
   fitBlock.hidden = false;
-  plotNote.textContent = fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE_EXACT;
+  applyPlotNote();
+  if (lastParsed?.primeOnly && fits.length > 1) {
+    const forms = groupParityForms(fits.map((fit) => fit.parity));
+    fitResults.append(
+      paragraph(
+        'fit-summary',
+        `${primeParitySummary(fits.length, forms.length)} This compares the primes on the chart. It is not a proof for every prime, or for every starting value.`,
+      ),
+    );
+  } else if (lastParsed?.primePowerOnly && fits.length > 1) {
+    const forms = groupParityForms(fits.map((fit) => fit.parity));
+    fitResults.append(
+      paragraph(
+        'fit-summary',
+        `${primePowerParitySummary(fits.length, forms.length)} This compares the prime powers on the chart. It is not a proof for every prime power, or for every starting value.`,
+      ),
+    );
+  } else if (lastParsed?.oddPrimePowerOnly && fits.length > 1) {
+    const forms = groupParityForms(fits.map((fit) => fit.parity));
+    fitResults.append(
+      paragraph(
+        'fit-summary',
+        `${oddPrimePowerParitySummary(fits.length, forms.length)} This compares that stress-test sample on the chart. It is not a proof for every such seed, or for every starting value.`,
+      ),
+    );
+  }
   for (const fit of fits) {
     fitResults.append(renderFitCard(fit));
   }
@@ -431,6 +633,17 @@ function seriesKey(series: Trajectory[]): string {
   return series
     .map((trajectory) => `${trajectory.seed}:${trajectory.values.length}:${trajectory.reachedOne}`)
     .join(',');
+}
+
+function emptySetMessage(ranges: string[], noun: string): string {
+  if (ranges.length === 1) return `No ${noun} in ${ranges[0]}.`;
+  if (ranges.length === 2) return `No ${noun} in ${ranges[0]} or ${ranges[1]}.`;
+  return `No ${noun} in ${ranges.slice(0, -1).join(', ')}, or ${ranges[ranges.length - 1]}.`;
+}
+
+function tooWideMessage(ranges: string[], noun: string): string {
+  if (ranges.length === 1) return `The ${noun} range ${ranges[0]} is too wide to expand. Shorten it.`;
+  return `Those ${noun} ranges are too wide to expand. Shorten them.`;
 }
 
 function warningParts(
@@ -549,10 +762,26 @@ function renderPatterns(series: Trajectory[] | null): void {
     series.map((trajectory, index) => [trajectory.seed.toString(), SERIES_COLORS[index % SERIES_COLORS.length]]),
   );
   patternsBlock.hidden = false;
-  const noun = groups.length === 1 ? 'pattern' : 'patterns';
-  patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;
-  patternsNote.textContent =
-    'Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. A different seed can take a different pattern. This describes the paths on the chart. It is not a proof for every starting value.';
+  if (lastParsed?.primeOnly) {
+    const formWord = groups.length === 1 ? 'form' : 'forms';
+    const primeWord = series.length === 1 ? 'prime' : 'primes';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} ${primeWord})`;
+    patternsNote.textContent = `${primeParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares the primes on the chart. It is not a proof for every prime, or for every starting value.`;
+  } else if (lastParsed?.primePowerOnly) {
+    const formWord = groups.length === 1 ? 'form' : 'forms';
+    const powerWord = series.length === 1 ? 'prime power' : 'prime powers';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} ${powerWord})`;
+    patternsNote.textContent = `${primePowerParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares the prime powers on the chart. It is not a proof for every prime power, or for every starting value.`;
+  } else if (lastParsed?.oddPrimePowerOnly) {
+    const formWord = groups.length === 1 ? 'form' : 'forms';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} odd-exponent prime powers)`;
+    patternsNote.textContent = `${oddPrimePowerParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares that stress-test sample on the chart. It is not a proof for every such seed, or for every starting value.`;
+  } else {
+    const noun = groups.length === 1 ? 'pattern' : 'patterns';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;
+    patternsNote.textContent =
+      'Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. A different seed can take a different pattern. This describes the paths on the chart. It is not a proof for every starting value.';
+  }
   groups.forEach((group, index) => patterns.append(renderPatternCard(group, index, colors)));
 }
 
@@ -610,6 +839,12 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
       const tag = document.createElement('span');
       tag.className = 'tip-peak';
       tag.textContent = 'peak';
+      value.append(document.createTextNode(' '), tag);
+    }
+    if (entry.beat) {
+      const tag = document.createElement('span');
+      tag.className = 'tip-peak';
+      tag.textContent = 'beat';
       value.append(document.createTextNode(' '), tag);
     }
     item.append(swatch, seed, value);

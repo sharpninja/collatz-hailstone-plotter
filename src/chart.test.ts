@@ -105,6 +105,10 @@ describe('buildLayout', () => {
       expect(curve.x).toBeCloseTo(series.samples[index + 1].x);
       expect(curve.y).toBeCloseTo(series.samples[index + 1].y);
     });
+    expect(start.beat).toBe(true);
+    expect(series.samples.find((sample) => sample.exact === 4n)?.beat).toBe(false);
+    expect(series.samples.find((sample) => sample.exact === 2n)?.beat).toBe(true);
+    expect(end?.beat).toBe(false);
     const highest = Math.min(...series.samples.map((sample) => sample.y));
     expect(peak!.y).toBeCloseTo(highest, 5);
     const deviations = series.curves.map((curve, index) => {
@@ -121,6 +125,19 @@ describe('buildLayout', () => {
     deviations.sort((a, b) => a - b);
     const p90 = deviations[Math.floor(0.9 * (deviations.length - 1))];
     expect(p90).toBeGreaterThan(8);
+  });
+
+  it('marks odd-exponent prime powers as beats and leaves squares unmarked', () => {
+    const trajectory = hailstone(9n, 100);
+    const layout = buildLayout([trajectory], { width: 960, height: 600, logY: false });
+    const series = layout.series[0];
+    expect(series.samples[0].exact).toBe(9n);
+    expect(series.samples[0].beat).toBe(false);
+    expect(series.samples.find((sample) => sample.exact === 8n)?.beat).toBe(true);
+    expect(series.samples.find((sample) => sample.exact === 16n)?.beat).toBe(false);
+    expect(series.samples.find((sample) => sample.exact === 7n)?.beat).toBe(true);
+    expect(series.samples.at(-1)?.exact).toBe(1n);
+    expect(series.samples.at(-1)?.beat).toBe(false);
   });
 
   it('keeps the same vertical order on a log axis', () => {
