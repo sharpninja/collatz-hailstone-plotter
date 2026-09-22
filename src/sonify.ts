@@ -32,6 +32,11 @@ export interface PlannedNote {
   /** Right: odd-exponent prime power. Left: every other term. Both: final powers of 2. */
   hand: Hand;
   midi: number;
+  /**
+   * Loudness for this step, about 0.3 at a valley and up to 1 at the tallest peak.
+   * Each climb swells and each partial descent eases. The closing powers of 2 fade to rest.
+   */
+  dynamics: number;
 }
 
 export interface Score {
@@ -77,11 +82,13 @@ export function scoreTrajectory(trajectory: Trajectory, maxSteps = MAX_PLAY_STEP
   const values = trajectory.values.slice(0, limit);
   const fullCadence = cadenceIndex(trajectory.values);
   const cadenceAt = fullCadence >= limit ? limit : fullCadence;
+  const dynamics = phraseDynamics(values, cadenceAt);
   const notes: PlannedNote[] = values.map((value, step) => ({
     step,
     value,
     hand: step >= cadenceAt ? 'both' : isOddPrimePower(value) ? 'right' : 'left',
     midi: midiForValue(value),
+    dynamics: dynamics[step],
   }));
   enforceCadenceDescent(notes, cadenceAt);
   return {
@@ -129,6 +136,64 @@ function pentatonicScale(): number[] {
   return notes;
 }
 
+const VALLEY = 0.32;
+const CREST_SPAN = 0.68;
+const REST_START = 0.3;
+const REST_END = 0.16;
+
+/**
+ * Loudness follows each climb and partial descent, then fades only on the
+ * closing powers of 2. A later climb swells again instead of one long crescendo.
+ */
+function phraseDynamics(values: readonly bigint[], cadenceAt: number): number[] {
+  const levels = new Array<number>(values.length).fill(VALLEY);
+  const phraseEnd = Math.min(Math.max(cadenceAt, 0), values.length);
+  let global = 0;
+  for (let i = 0; i < phraseEnd; i += 1) global = Math.max(global, log2Of(values[i]));
+  let index = 0;
+  while (index < phraseEnd - 1) {
+    const start = index;
+    if (values[index + 1] > values[index]) {
+      while (index < phraseEnd - 1 && values[index + 1] >= values[index]) index += 1;
+      paintRun(levels, values, start, index, true, global);
+    } else if (values[index + 1] < values[index]) {
+      while (index < phraseEnd - 1 && values[index + 1] <= values[index]) index += 1;
+      paintRun(levels, values, start, index, false, global);
+    } else {
+      index += 1;
+    }
+  }
+  if (cadenceAt < values.length) {
+    const last = values.length - 1;
+    const span = Math.max(1, last - cadenceAt);
+    for (let i = cadenceAt; i < values.length; i += 1) {
+      const t = cadenceAt === last ? 1 : (i - cadenceAt) / span;
+      levels[i] = REST_START + (REST_END - REST_START) * t;
+    }
+  }
+  return levels;
+}
+
+function paintRun(
+  levels: number[],
+  values: readonly bigint[],
+  start: number,
+  end: number,
+  rising: boolean,
+  global: number,
+): void {
+  const high = log2Of(values[rising ? end : start]);
+  const peakScale = global <= 0 ? 1 : high / global;
+  const crest = VALLEY + CREST_SPAN * peakScale;
+  const lowLog = log2Of(values[start]);
+  const highLog = log2Of(values[end]);
+  const span = highLog - lowLog;
+  for (let i = start; i <= end; i += 1) {
+    const t = span === 0 ? 1 : Math.min(1, Math.max(0, (log2Of(values[i]) - lowLog) / span));
+    levels[i] = rising ? VALLEY + (crest - VALLEY) * t : crest + (VALLEY - crest) * t;
+  }
+}
+
 /** Keep the closing powers of 2 on a strictly descending line. */
 function enforceCadenceDescent(notes: PlannedNote[], cadenceAt: number): void {
   const scale = pentatonicScale();
@@ -157,6 +222,8 @@ interface LiveNote {
   /** Closing powers of 2: both hands together, softer, no roll. */
   settle: boolean;
   ring: boolean;
+  /** Phrase loudness copied from the step, so a roll shares one swell. */
+  gain: number;
 }
 
 export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): LiveNote[] {
@@ -164,8 +231,9 @@ export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): Li
   const plan: LiveNote[] = [];
   for (const note of score.notes) {
     const ring = note.value === 1n;
+    const gain = note.dynamics;
     if (note.hand === 'right' && hands.right) {
-      plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: false, ring: false });
+      plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: false, ring: false, gain });
     } else if (note.hand === 'left' && hands.left) {
       const roll = leftHandRoll(note.midi);
       LEFT_HAND_ROLL.forEach((fraction, index) => {
@@ -175,11 +243,16 @@ export function schedulePlan(score: Score, stepMs: number, hands: PlayHands): Li
           kind: 'left',
           settle: false,
           ring: false,
+          gain,
         });
       });
     } else if (note.hand === 'both') {
-      if (hands.right) plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: true, ring });
-      if (hands.left) plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'left', settle: true, ring });
+      if (hands.right) {
+        plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'right', settle: true, ring, gain });
+      }
+      if (hands.left) {
+        plan.push({ time: note.step * stepSec, midi: note.midi, kind: 'left', settle: true, ring, gain });
+      }
     }
   }
   return plan;
@@ -239,7 +312,7 @@ export class TrajectoryPlayer {
       let last = start;
       for (const note of plan) {
         const at = start + note.time;
-        this.strike(ctx, at, note.midi, note.kind, note.settle, note.ring);
+        this.strike(ctx, at, note.midi, note.kind, note.settle, note.ring, note.gain);
         const release = note.ring ? 2.8 : note.settle ? 1.15 : note.kind === 'right' ? 0.48 : 0.34;
         if (at + release > last) last = at + release;
       }
@@ -309,12 +382,14 @@ export class TrajectoryPlayer {
     kind: 'right' | 'left',
     settle: boolean,
     ring: boolean,
+    gain: number,
   ): void {
     const master = this.master;
     if (!master) return;
+    const shaped = Math.min(1, Math.max(0.05, gain));
     const freq = 440 * 2 ** ((midi - 69) / 12);
     const partials = settle ? REST_PARTIALS : kind === 'right' ? RIGHT_PARTIALS : LEFT_PARTIALS;
-    const peak = ring ? 0.07 : settle ? (kind === 'right' ? 0.11 : 0.05) : kind === 'right' ? 0.2 : 0.04;
+    const peak = (ring ? 0.07 : settle ? (kind === 'right' ? 0.11 : 0.05) : kind === 'right' ? 0.2 : 0.04) * shaped;
     const attack = settle ? 0.03 : kind === 'right' ? 0.004 : 0.012;
     const decay = ring ? 2.6 : settle ? 0.95 : kind === 'right' ? 0.38 : 0.26;
     const amp = ctx.createGain();

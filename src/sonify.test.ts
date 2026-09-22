@@ -88,6 +88,32 @@ describe('trajectory score', () => {
     expect(isPowerOfTwo(8n)).toBe(true);
     expect(isPowerOfTwo(9n)).toBe(false);
     const only = scoreTrajectory(hailstone(1n, 10));
-    expect(only.notes).toEqual([{ step: 0, value: 1n, hand: 'both', midi: MIDI_LOW }]);
+    expect(only.notes[0]).toMatchObject({ step: 0, value: 1n, hand: 'both', midi: MIDI_LOW });
+    expect(only.notes[0].dynamics).toBeLessThan(0.3);
+  });
+
+  it('swells toward each local peak and eases before the next climb', () => {
+    const score = scoreTrajectory(hailstone(27n, 10_000));
+    const before = score.notes.slice(0, score.cadenceAt);
+    const peak = before.find((note) => note.value === 9232n);
+    expect(peak).toBeDefined();
+    expect(peak!.dynamics).toBeGreaterThan(0.9);
+    expect(peak!.dynamics).toBeGreaterThan(before[0].dynamics);
+    const afterPeak = before[peak!.step + 1];
+    expect(afterPeak.dynamics).toBeLessThan(peak!.dynamics);
+    let eased = false;
+    let swelledAgain = false;
+    for (let i = peak!.step + 1; i < before.length; i += 1) {
+      if (before[i].dynamics < peak!.dynamics - 0.2) eased = true;
+      if (eased && before[i].dynamics > before[i - 1].dynamics + 0.05) swelledAgain = true;
+    }
+    expect(eased).toBe(true);
+    expect(swelledAgain).toBe(true);
+    const cadence = score.notes.slice(score.cadenceAt);
+    expect(cadence.at(-1)!.dynamics).toBeLessThanOrEqual(cadence[0].dynamics);
+    expect(cadence.at(-1)!.dynamics).toBeLessThan(peak!.dynamics);
+    const plan = schedulePlan(score, 200, { right: true, left: true });
+    const peakGain = plan.find((note) => note.time >= peak!.step * 0.2 && note.time < (peak!.step + 1) * 0.2);
+    expect(peakGain?.gain).toBeCloseTo(peak!.dynamics);
   });
 });
