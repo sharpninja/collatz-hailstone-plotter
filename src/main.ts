@@ -447,27 +447,24 @@ function showStatus(): void {
     { kind: 'ok', text: statusLine(trajectories) },
     ...warningParts(lastParsed, trajectories),
   ];
-  const hint = scaleHint(trajectories, logInput.checked, alignInput.checked);
+  const hint = scaleHint(trajectories, logInput.checked);
   if (hint) parts.push({ kind: 'warn', text: hint });
   if (alignInput.checked && trajectories.length > 1) {
-    const height = logInput.checked
-      ? 'height is the log of its value divided by the log of its peak'
-      : 'height is its value divided by its peak';
     parts.push({
       kind: 'warn',
-      text: `Align is on: horizontal position is each path’s progress, and ${height}.`,
+      text: 'Align is on: every path ends together at 1. Shorter seeds start later on the axis.',
     });
   }
   setMessage(parts);
 }
 
-function scaleHint(series: Trajectory[], logY: boolean, align: boolean): string | null {
-  if (logY || align || series.length < 2) return null;
+function scaleHint(series: Trajectory[], logY: boolean): string | null {
+  if (logY || series.length < 2) return null;
   const peaks = series.map((trajectory) => peakValue(trajectory.values));
   const tallest = peaks.reduce((best, peak) => (peak > best ? peak : best));
   const shortest = peaks.reduce((best, peak) => (peak < best ? peak : best));
   if (shortest < 1n || tallest / shortest < 40n) return null;
-  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on Align / normalize to compare shapes, or the logarithmic axis to compare true values.';
+  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on the logarithmic axis to compare true values.';
 }
 
 function scheduleRender(): void {
@@ -499,7 +496,7 @@ function render(): void {
     align: alignInput.checked,
   });
   const summary = alignInput.checked
-    ? `${statusLine(trajectories)} Axes show each path’s progress and share of its peak.`
+    ? `${statusLine(trajectories)} Paths are shifted so they all end at 1.`
     : statusLine(trajectories);
   view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)), beatsInput.checked);
 }
@@ -938,7 +935,7 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
   tooltip.replaceChildren();
   const heading = document.createElement('p');
   heading.className = 'tip-step';
-  heading.textContent = hit.align ? 'Aligned progress' : `Iteration ${formatCount(hit.step)}`;
+  heading.textContent = `Iterations to 1 · ${formatCount(hit.step)}`;
   const list = document.createElement('ul');
   for (const entry of hit.entries) {
     const item = document.createElement('li');
@@ -950,7 +947,9 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
     seed.textContent = formatExact(entry.seed);
     const value = document.createElement('span');
     value.className = 'tip-value';
-    value.textContent = hit.align ? `${formatCount(entry.step)} · ${formatExact(entry.exact)}` : formatExact(entry.exact);
+    value.textContent = hit.align
+      ? `step ${formatCount(entry.step)} · ${formatExact(entry.exact)}`
+      : formatExact(entry.exact);
     if (entry.peak) {
       const tag = document.createElement('span');
       tag.className = 'tip-peak';

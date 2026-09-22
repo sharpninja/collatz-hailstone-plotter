@@ -44,7 +44,7 @@ export interface PngFit {
   predict: (iteration: number) => number;
   start: number;
   end: number;
-  /** Peak Collatz value, used when the chart is in align / normalize mode. */
+  /** Kept for callers that already pass a peak. Align does not rescale height. */
   peak?: number;
 }
 
@@ -81,7 +81,7 @@ export function renderPng(
   context.fillStyle = muted;
   context.font = '15px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
   const axisNote = align
-    ? 'axes normalized to each path’s length and peak'
+    ? 'paths shifted so they all end at 1'
     : logY
       ? 'logarithmic value axis'
       : 'linear value axis';
