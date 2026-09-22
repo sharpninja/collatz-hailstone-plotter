@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hailstone } from './collatz';
-import { parityForm } from './parity';
+import { groupParityForms, parityForm } from './parity';
 
 describe('parityForm', () => {
   it('writes the hand-checked identity for 3', () => {
@@ -49,6 +49,39 @@ describe('parityForm', () => {
     const denominator = 1n << BigInt(form.divisions);
     expect(numerator / denominator).toBe(1n);
     expect((denominator - form.offset) / 3n ** BigInt(form.oddSteps)).toBe(27n);
+  });
+
+  it('groups identical parity signatures and keeps different ones apart', () => {
+    const odds = [3n, 5n, 7n, 9n].map((seed) => hailstone(seed, 2));
+    const grouped = groupParityForms(odds.map((trajectory) => parityForm(trajectory.values, trajectory)));
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].seeds).toEqual([3n, 5n, 7n, 9n]);
+    expect(grouped[0].oddSteps).toBe(1);
+    expect(grouped[0].divisions).toBe(1);
+    expect(grouped[0].offset).toBe(1n);
+    expect(grouped[0].expression).toBe('(3^1 · N + m) / 2^1');
+    expect(grouped[0].parameters).toBe('o = 1 · e = 1 · m = 1');
+
+    const evens = [4n, 6n, 10n].map((seed) => hailstone(seed, 1));
+    const evenGroup = groupParityForms(evens.map((trajectory) => parityForm(trajectory.values, trajectory)));
+    expect(evenGroup).toHaveLength(1);
+    expect(evenGroup[0].expression).toBe('N / 2^1');
+    expect(evenGroup[0].seeds).toEqual([4n, 6n, 10n]);
+
+    const mixed = [3n, 4n].map((seed) => hailstone(seed, 1));
+    const split = groupParityForms(mixed.map((trajectory) => parityForm(trajectory.values, trajectory)));
+    expect(split.map((group) => group.seeds)).toEqual([[3n], [4n]]);
+    expect(split[0].expression).toBe('(3^1 · N + m)');
+    expect(split[1].expression).toBe('N / 2^1');
+
+    const finished = [hailstone(27n, 10_000), hailstone(27n, 10_000), hailstone(8n, 10)];
+    const patterns = groupParityForms(finished.map((trajectory) => parityForm(trajectory.values, trajectory)));
+    expect(patterns).toHaveLength(2);
+    expect(patterns[0].seeds).toEqual([27n, 27n]);
+    expect(patterns[1].seeds).toEqual([8n]);
+    expect(patterns[0].expression).not.toBe(patterns[1].expression);
+    expect(patterns[0].solvedForSeed).toMatch(/^N = /);
+    expect(patterns[1].expression).toBe('N / 2^3');
   });
 
   it('keeps a capped prefix exact without claiming a map onto 1', () => {

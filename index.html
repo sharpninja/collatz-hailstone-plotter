@@ -49,13 +49,14 @@
                 rows="3"
                 spellcheck="false"
                 autocapitalize="off"
-                placeholder="e.g. 27, 12, 19"
+                placeholder="e.g. 27 or 20..27"
               >27</textarea>
-              <p class="hint">Positive integers, separated by commas or spaces. Up to 12 seeds.</p>
+              <p class="hint">Positive integers, separated by commas or spaces. Ranges like 20..27 include both ends. Up to 12 seeds.</p>
             </div>
 
             <div class="examples" role="group" aria-label="Examples">
               <button type="button" data-example="27" data-log="off">27</button>
+              <button type="button" data-example="20..27" data-log="on">20..27</button>
               <button type="button" data-example="25, 26, 27" data-log="on">25, 26, 27</button>
               <button type="button" data-example="12, 19, 27" data-log="on">12, 19, 27</button>
             </div>
@@ -70,6 +71,12 @@
               <input id="log-scale" type="checkbox" />
               <span>Logarithmic value axis</span>
             </label>
+
+            <label class="check" for="align-plots">
+              <input id="align-plots" type="checkbox" />
+              <span>Align / normalize</span>
+            </label>
+            <p class="hint">Stretch each path to its own length and peak. Off keeps true iterations and Collatz values on one shared pair of axes.</p>
 
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
@@ -86,6 +93,12 @@
               Each path has an exact form in its starting value N, fixed by the parity pattern that run actually took: every term is (3^o · N + m) / 2^e. The pattern depends on N, so this is exact for these seeds and is not a proof for every starting value. The dashed curve is only a visual fit of the plotted samples.
             </p>
             <div id="fit-results" class="fit-results" aria-live="polite"></div>
+          </section>
+
+          <section id="patterns-block" class="patterns-block" hidden aria-labelledby="patterns-heading">
+            <h2 id="patterns-heading">Distinct functions</h2>
+            <p id="patterns-note" class="hint"></p>
+            <div id="patterns" class="patterns"></div>
           </section>
 
           <section class="legend-block" aria-labelledby="legend-heading">

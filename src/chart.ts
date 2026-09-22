@@ -65,6 +65,8 @@ export interface Layout {
   width: number;
   height: number;
   logY: boolean;
+  /** Each series is stretched to its own length and peak. Off shares absolute axes. */
+  align: boolean;
   plot: { x: number; y: number; w: number; h: number };
   xMax: number;
   yMax: number;
@@ -195,13 +197,33 @@ function labelSet(ticks: LogTick[], maxLabels: number): Set<number> {
   return chosen;
 }
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+/** Iteration ÷ stopping time, in [0, 1]. A path that is already 1 stays at 0. */
+export function normalizedProgress(step: number, steps: number): number {
+  if (steps <= 0) return 0;
+  return clamp01(step / steps);
+}
+
+/** Value ÷ peak, or log₁₀(value) ÷ log₁₀(peak), in [0, 1]. */
+export function normalizedHeight(value: number, peak: number, logY: boolean): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (!Number.isFinite(peak) || peak <= 0) return 0;
+  if (logY && peak > 1) return clamp01(Math.log10(value) / Math.log10(peak));
+  return clamp01(value / peak);
+}
+
 export function buildLayout(
   trajectories: Trajectory[],
-  options: { width: number; height: number; logY: boolean },
+  options: { width: number; height: number; logY: boolean; align?: boolean },
 ): Layout {
   const width = Math.max(1, options.width);
   const height = Math.max(1, options.height);
   const logY = options.logY;
+  const align = options.align ?? false;
   const xTarget = width < 560 ? 5 : 8;
   const yTarget = height < 420 ? 4 : 6;
 
@@ -215,12 +237,17 @@ export function buildLayout(
     }
   }
 
-  const xDomain = integerDomain(maxStep, xTarget);
+  const xDomain = align ? { max: 1, step: 0.25 } : integerDomain(maxStep, xTarget);
   const yLinear = linearDomain(dataMax, yTarget);
   const yLog = logDomain(dataMax);
-  const yMax = logY ? yLog.max : yLinear.max;
+  const yMax = align ? 1 : logY ? yLog.max : yLinear.max;
+  const unitTicks = [0, 0.25, 0.5, 0.75, 1];
 
-  const yLabelSource = logY ? yLog.ticks.map((tick) => tick.value) : rangeTicks(0, yLinear.max, yLinear.step);
+  const yLabelSource = align
+    ? unitTicks
+    : logY
+      ? yLog.ticks.map((tick) => tick.value)
+      : rangeTicks(0, yLinear.max, yLinear.step);
   const longest = yLabelSource.reduce((length, value) => Math.max(length, formatTick(value).length), 1);
   const yTitleX = width < 560 ? 14 : 18;
   const padding: Padding = {
@@ -239,12 +266,13 @@ export function buildLayout(
 
   const xOf = (step: number) => plot.x + (step / xDomain.max) * plot.w;
   const yOf = (value: number) => {
+    if (align) return plot.y + plot.h - clamp01(value) * plot.h;
     const safe = Math.max(value, logY ? 1 : 0);
     const t = logY ? Math.log10(safe) / Math.log10(yMax) : safe / yMax;
     return plot.y + plot.h - t * plot.h;
   };
 
-  const rawXTicks = rangeTicks(0, xDomain.max, xDomain.step).map((value) => ({
+  const rawXTicks = (align ? unitTicks : rangeTicks(0, xDomain.max, xDomain.step)).map((value) => ({
     value,
     x: xOf(value),
     y: plot.y + plot.h,
@@ -253,21 +281,23 @@ export function buildLayout(
   }));
   const xTicks = declutter(rawXTicks, (tick) => tick.x, 52);
 
-  const labels = logY ? labelSet(yLog.ticks, 7) : null;
-  const showMinor = logY && yLog.ticks.length <= 40;
-  const ySource = logY
-    ? yLog.ticks
-        .filter((tick) => tick.major || showMinor)
-        .map((tick) => ({
-          value: tick.value,
-          major: tick.major,
-          label: labels?.has(tick.value) ? formatTick(tick.value) : '',
-        }))
-    : rangeTicks(0, yLinear.max, yLinear.step).map((value) => ({
-        value,
-        major: true,
-        label: formatTick(value),
-      }));
+  const labels = !align && logY ? labelSet(yLog.ticks, 7) : null;
+  const showMinor = !align && logY && yLog.ticks.length <= 40;
+  const ySource = align
+    ? unitTicks.map((value) => ({ value, major: true, label: formatTick(value) }))
+    : logY
+      ? yLog.ticks
+          .filter((tick) => tick.major || showMinor)
+          .map((tick) => ({
+            value: tick.value,
+            major: tick.major,
+            label: labels?.has(tick.value) ? formatTick(tick.value) : '',
+          }))
+      : rangeTicks(0, yLinear.max, yLinear.step).map((value) => ({
+          value,
+          major: true,
+          label: formatTick(value),
+        }));
   const yTicks = declutter(
     ySource.map((tick) => ({
       value: tick.value,
@@ -282,14 +312,18 @@ export function buildLayout(
 
   const series: LayoutSeries[] = trajectories.map((trajectory, index) => {
     const peak = peakValue(trajectory.values);
+    const steps = trajectory.values.length - 1;
+    const peakNumber = Number(peak);
     const samples: LayoutSample[] = trajectory.values.map((exact, step) => {
       const value = Number(exact);
+      const xValue = align ? normalizedProgress(step, steps) : step;
+      const yValue = align ? normalizedHeight(value, peakNumber, logY) : value;
       return {
         step,
         exact,
         value,
-        x: xOf(step),
-        y: yOf(value),
+        x: xOf(xValue),
+        y: yOf(yValue),
         peak: exact === peak,
         start: step === 0,
         end: step === trajectory.values.length - 1,
@@ -302,7 +336,7 @@ export function buildLayout(
       stoppedForSize: trajectory.stoppedForSize,
       approximate: exceedsSafeInteger(trajectory.values),
       peak,
-      steps: trajectory.values.length - 1,
+      steps,
       samples,
       curves: smoothThrough(samples.map((sample) => ({ x: sample.x, y: sample.y }))),
     };
@@ -312,6 +346,7 @@ export function buildLayout(
     width,
     height,
     logY,
+    align,
     plot,
     xMax: xDomain.max,
     yMax,
@@ -319,8 +354,8 @@ export function buildLayout(
     xTicks,
     yTicks,
     series,
-    xLabel: 'Iteration',
-    yLabel: logY ? 'Value (log)' : 'Value',
+    xLabel: align ? 'Progress' : 'Iteration',
+    yLabel: align ? (logY ? 'Log share of peak' : 'Value / peak') : logY ? 'Value (log)' : 'Value',
     yTitleX,
   };
 }
@@ -347,20 +382,46 @@ function declutter<T extends { label: string }>(
 export interface HoverHit {
   step: number;
   x: number;
+  /** True when the guide is a shared progress, so each entry has its own iteration. */
+  align: boolean;
   entries: Array<{
     color: string;
     seed: bigint;
     exact: bigint;
+    x: number;
     y: number;
     peak: boolean;
+    step: number;
   }>;
 }
 
-/** Nearest integer step under the cursor, while it is inside the plot frame. */
+/** Nearest sample under the cursor, while it is inside the plot frame. */
 export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
   const { plot, xMax, maxStep } = layout;
   if (x < plot.x || x > plot.x + plot.w || y < plot.y || y > plot.y + plot.h) return null;
   if (maxStep < 0 || layout.series.length === 0) return null;
+
+  if (layout.align) {
+    const progress = (x - plot.x) / plot.w;
+    const entries: HoverHit['entries'] = [];
+    for (const series of layout.series) {
+      const last = series.samples.length - 1;
+      if (last < 0) continue;
+      const index = last === 0 ? 0 : Math.round(clamp01(progress) * last);
+      const sample = series.samples[index];
+      entries.push({
+        color: series.color,
+        seed: series.seed,
+        exact: sample.exact,
+        x: sample.x,
+        y: sample.y,
+        peak: sample.peak,
+        step: sample.step,
+      });
+    }
+    if (entries.length === 0) return null;
+    return { step: entries[0].step, x: plot.x + clamp01(progress) * plot.w, align: true, entries };
+  }
 
   const approx = ((x - plot.x) / plot.w) * xMax;
   let step = Math.round(approx);
@@ -380,12 +441,14 @@ export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
       color: series.color,
       seed: series.seed,
       exact: sample.exact,
+      x: sample.x,
       y: sample.y,
       peak: sample.peak,
+      step: sample.step,
     });
   }
   if (entries.length === 0) return null;
-  return { step, x: sampleX, entries };
+  return { step, x: sampleX, align: false, entries };
 }
 
 export function seriesPath(series: LayoutSeries): string {
@@ -422,8 +485,19 @@ export interface FitPolyline {
 }
 
 /** Map an iteration and Collatz value into the same pixel space as the samples. */
-export function dataToSvg(layout: Layout, step: number, value: number): { x: number; y: number } {
+export function dataToSvg(
+  layout: Layout,
+  step: number,
+  value: number,
+  norm?: { steps: number; peak: number },
+): { x: number; y: number } {
   const { plot, xMax, yMax, logY } = layout;
+  if (layout.align) {
+    return {
+      x: plot.x + normalizedProgress(step, norm?.steps ?? 1) * plot.w,
+      y: plot.y + plot.h - normalizedHeight(value, norm?.peak ?? 1, logY) * plot.h,
+    };
+  }
   const x = plot.x + (step / xMax) * plot.w;
   const safe = Math.max(value, logY ? 1 : 0);
   const t = logY ? Math.log10(safe) / Math.log10(yMax) : safe / yMax;
@@ -433,20 +507,21 @@ export function dataToSvg(layout: Layout, step: number, value: number): { x: num
 /** Sample a fitted value function densely enough to read as a smooth dashed curve. */
 export function buildFitPolylines(
   layout: Layout,
-  fits: Array<{ color: string; predict: (iteration: number) => number; start: number; end: number }>,
+  fits: Array<{ color: string; predict: (iteration: number) => number; start: number; end: number; peak?: number }>,
 ): FitPolyline[] {
   return fits.map((fit) => {
     const span = Math.max(0, fit.end - fit.start);
     const count = span <= 240 ? Math.max(2, Math.ceil(span * 2)) : 480;
+    const norm = layout.align ? { steps: Math.max(1, span), peak: fit.peak ?? 1 } : undefined;
     const points: FitPolyline['points'] = [];
     for (let index = 0; index <= count; index++) {
       const iteration = fit.start + (span * index) / count;
       const value = fit.predict(iteration);
-      if (!Number.isFinite(value) || (layout.logY && value <= 0)) {
+      if (!Number.isFinite(value) || (layout.logY && !layout.align && value <= 0)) {
         points.push(null);
         continue;
       }
-      points.push(dataToSvg(layout, iteration, value));
+      points.push(dataToSvg(layout, iteration, value, norm));
     }
     return { color: fit.color, points };
   });
@@ -630,7 +705,7 @@ export function renderHover(layer: SVGGElement, layout: Layout, hit: HoverHit | 
   for (const entry of hit.entries) {
     layer.append(
       svgEl('circle', {
-        cx: String(hit.x),
+        cx: String(entry.x),
         cy: String(entry.y),
         r: '5.5',
         fill: entry.color,

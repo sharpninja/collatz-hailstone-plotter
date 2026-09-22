@@ -214,9 +214,15 @@ button:disabled {
 .message p[data-kind='warn'] { color: var(--warn); }
 .message p[data-kind='error'] { color: var(--danger); }
 
-.fit-block { display: grid; gap: 10px; }
+.fit-block, .patterns-block { display: grid; gap: 10px; }
 
-.fit-block[hidden] { display: none; }
+.fit-block[hidden], .patterns-block[hidden] { display: none; }
+
+.patterns { display: grid; gap: 12px; }
+
+.pattern-seeds { margin: 0; font-size: 0.86rem; }
+
+.pattern-seed { font-family: var(--mono); font-weight: 650; }
 
 .fit-results { display: grid; gap: 12px; }
 

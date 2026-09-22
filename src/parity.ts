@@ -11,6 +11,57 @@
 /** Paths longer than this still report the final identity, without a line per term. */
 const TERM_LIST_LIMIT = 400;
 
+export interface ParityGroup {
+  oddSteps: number;
+  divisions: number;
+  offset: bigint;
+  /** Closed form in N, with m kept symbolic. Same (o, e, m) share one of these. */
+  expression: string;
+  parameters: string;
+  /** Set when every seed in the group reached 1, so the identity solves for N. */
+  solvedForSeed: string | null;
+  seeds: bigint[];
+}
+
+/**
+ * Seeds that took the same parity pattern: the same odd-step count, the same
+ * number of divisions by 2, and the same constant m. Order is first-seen.
+ * A finished path to 1 determines its starting value, so those groups usually
+ * hold one seed. A shorter shared prefix can put several seeds on one form.
+ */
+export function groupParityForms(forms: readonly ParityForm[]): ParityGroup[] {
+  const groups: ParityGroup[] = [];
+  const indexOf = new Map<string, number>();
+  for (const form of forms) {
+    const key = `${form.oddSteps}\0${form.divisions}\0${form.offset.toString()}`;
+    const found = indexOf.get(key);
+    if (found === undefined) {
+      indexOf.set(key, groups.length);
+      groups.push({
+        oddSteps: form.oddSteps,
+        divisions: form.divisions,
+        offset: form.offset,
+        expression: patternExpression(form.oddSteps, form.divisions),
+        parameters: form.parameters,
+        solvedForSeed: form.solvedForSeed,
+        seeds: [form.seed],
+      });
+      continue;
+    }
+    const group = groups[found];
+    group.seeds.push(form.seed);
+    if (!form.reachedOne) group.solvedForSeed = null;
+  }
+  return groups;
+}
+
+function patternExpression(oddSteps: number, divisions: number): string {
+  if (oddSteps === 0 && divisions === 0) return 'N';
+  if (oddSteps === 0) return `N / 2^${divisions}`;
+  const numerator = `(3^${oddSteps} · N + m)`;
+  return divisions === 0 ? numerator : `${numerator} / 2^${divisions}`;
+}
+
 export interface ParityForm {
   seed: bigint;
   oddSteps: number;
