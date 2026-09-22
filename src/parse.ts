@@ -37,6 +37,11 @@ export interface ParsedSeeds {
    * `seeds` is empty. Used when a prime range sits past the sieve.
    */
   overCap: boolean;
+  /**
+   * Every plotted seed came from a prime range, with no mixed numbers or
+   * ordinary ranges. Used to describe those primes' parity forms.
+   */
+  primeOnly: boolean;
 }
 
 const RANGE = /^(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/;
@@ -130,6 +135,7 @@ export function parseSeeds(text: string): ParsedSeeds {
     emptyPrimes,
     tooWide: [] as string[],
     overCap: false,
+    primeOnly: false,
   };
 
   // An empty prime range is an error on its own, so nothing else in the field is plotted.
@@ -147,7 +153,8 @@ export function parseSeeds(text: string): ParsedSeeds {
   if (distinct.count > BigInt(MAX_SEEDS)) return { ...base, overflow: distinct.count };
 
   const expanded = expandInOrder(pieces);
-  return { ...base, seeds: expanded.seeds, duplicates: expanded.duplicates };
+  const primeOnly = expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'primes');
+  return { ...base, seeds: expanded.seeds, duplicates: expanded.duplicates, primeOnly };
 }
 
 /** Positive integer within the iteration cap, or null when the field is unusable. */
@@ -496,5 +503,16 @@ function parseIndividuals(pieces: Piece[], rejected: string[]): ParsedSeeds {
     seeds.push(piece.value);
   }
 
-  return { seeds, rejected, duplicates, omitted, overflow: null, reversed: 0, emptyPrimes: [], tooWide: [], overCap: false };
+  return {
+    seeds,
+    rejected,
+    duplicates,
+    omitted,
+    overflow: null,
+    reversed: 0,
+    emptyPrimes: [],
+    tooWide: [],
+    overCap: false,
+    primeOnly: false,
+  };
 }

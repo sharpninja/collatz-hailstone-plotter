@@ -11,6 +11,20 @@
 /** Paths longer than this still report the final identity, without a line per term. */
 const TERM_LIST_LIMIT = 400;
 
+/**
+ * How many distinct parity forms the plotted prime seeds take.
+ * The count is for those seeds only. It is not a claim about every prime.
+ */
+export function primeParitySummary(primeCount: number, formCount: number): string {
+  const forms = `${formatParityCount(formCount)} distinct parity ${formCount === 1 ? 'form' : 'forms'}`;
+  if (primeCount === 1) return `This prime seed takes ${forms}.`;
+  return `These ${formatParityCount(primeCount)} prime seeds take ${forms}.`;
+}
+
+function formatParityCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 export interface ParityGroup {
   oddSteps: number;
   divisions: number;

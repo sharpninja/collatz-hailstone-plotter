@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hailstone } from './collatz';
-import { groupParityForms, parityForm } from './parity';
+import { groupParityForms, parityForm, primeParitySummary } from './parity';
 
 describe('parityForm', () => {
   it('writes the hand-checked identity for 3', () => {
@@ -96,5 +96,12 @@ describe('parityForm', () => {
     expect(form.note).toMatch(/not a completed map/i);
     const numerator = 3n ** BigInt(form.oddSteps) * 27n + form.offset;
     expect(numerator / (1n << BigInt(form.divisions))).toBe(form.value);
+  });
+
+  it('counts distinct parity forms among prime seeds without claiming a proof', () => {
+    expect(primeParitySummary(7, 7)).toBe('These 7 prime seeds take 7 distinct parity forms.');
+    expect(primeParitySummary(7, 1)).toBe('These 7 prime seeds take 1 distinct parity form.');
+    expect(primeParitySummary(1, 1)).toBe('This prime seed takes 1 distinct parity form.');
+    expect(primeParitySummary(2, 2)).toBe('These 2 prime seeds take 2 distinct parity forms.');
   });
 });

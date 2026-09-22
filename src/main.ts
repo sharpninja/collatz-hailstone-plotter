@@ -11,7 +11,7 @@ import {
 } from './chart';
 import { downloadPng, type PngFit } from './export';
 import { fitSeries, type FitResult } from './fit';
-import { groupParityForms, parityForm, type ParityForm, type ParityGroup } from './parity';
+import { groupParityForms, parityForm, primeParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
 import {
@@ -357,6 +357,15 @@ function renderFitPanel(): void {
   }
   fitBlock.hidden = false;
   plotNote.textContent = fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE_EXACT;
+  if (lastParsed?.primeOnly && fits.length > 1) {
+    const forms = groupParityForms(fits.map((fit) => fit.parity));
+    fitResults.append(
+      paragraph(
+        'fit-summary',
+        `${primeParitySummary(fits.length, forms.length)} This compares the primes on the chart. It is not a proof for every prime, or for every starting value.`,
+      ),
+    );
+  }
   for (const fit of fits) {
     fitResults.append(renderFitCard(fit));
   }
@@ -587,10 +596,17 @@ function renderPatterns(series: Trajectory[] | null): void {
     series.map((trajectory, index) => [trajectory.seed.toString(), SERIES_COLORS[index % SERIES_COLORS.length]]),
   );
   patternsBlock.hidden = false;
-  const noun = groups.length === 1 ? 'pattern' : 'patterns';
-  patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;
-  patternsNote.textContent =
-    'Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. A different seed can take a different pattern. This describes the paths on the chart. It is not a proof for every starting value.';
+  if (lastParsed?.primeOnly) {
+    const formWord = groups.length === 1 ? 'form' : 'forms';
+    const primeWord = series.length === 1 ? 'prime' : 'primes';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} ${primeWord})`;
+    patternsNote.textContent = `${primeParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares the primes on the chart. It is not a proof for every prime, or for every starting value.`;
+  } else {
+    const noun = groups.length === 1 ? 'pattern' : 'patterns';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;
+    patternsNote.textContent =
+      'Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. A different seed can take a different pattern. This describes the paths on the chart. It is not a proof for every starting value.';
+  }
   groups.forEach((group, index) => patterns.append(renderPatternCard(group, index, colors)));
 }
 

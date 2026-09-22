@@ -134,6 +134,10 @@ describe('parseSeeds', () => {
 
   it('expands a prime range to the primes inside it', () => {
     expect(parseSeeds('primes:20..30').seeds).toEqual([23n, 29n]);
+    expect(parseSeeds('primes:20..30').primeOnly).toBe(true);
+    expect(parseSeeds('p:20..30').primeOnly).toBe(true);
+    expect(parseSeeds('20..30').primeOnly).toBe(false);
+    expect(parseSeeds('27').primeOnly).toBe(false);
     expect(parseSeeds('p:20..30').seeds).toEqual([23n, 29n]);
     expect(parseSeeds('primes 20..30').seeds).toEqual([23n, 29n]);
     expect(parseSeeds('Primes:20..30').seeds).toEqual([23n, 29n]);
@@ -152,6 +156,8 @@ describe('parseSeeds', () => {
 
   it('mixes prime ranges with literals and ordinary ranges', () => {
     expect(parseSeeds('27, primes:20..30').seeds).toEqual([27n, 23n, 29n]);
+    expect(parseSeeds('27, primes:20..30').primeOnly).toBe(false);
+    expect(parseSeeds('primes:10..20, primes:15..30').primeOnly).toBe(true);
     expect(parseSeeds('27, primes:20..40').seeds).toEqual([27n, 23n, 29n, 31n, 37n]);
     expect(parseSeeds('20..22, primes:20..30').seeds).toEqual([20n, 21n, 22n, 23n, 29n]);
     const overlap = parseSeeds('23, primes:20..30');
@@ -170,6 +176,7 @@ describe('parseSeeds', () => {
     const parsed = parseSeeds('primes:14..16');
     expect(parsed.seeds).toEqual([]);
     expect(parsed.emptyPrimes).toEqual(['14..16']);
+    expect(parsed.primeOnly).toBe(false);
     expect(parsed.overflow).toBeNull();
     expect(parsed.overCap).toBe(false);
 
