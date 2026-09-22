@@ -76,12 +76,32 @@ export function cadenceIndex(values: readonly bigint[]): number {
   return index;
 }
 
-export function scoreTrajectory(trajectory: Trajectory, maxSteps = MAX_PLAY_STEPS): Score {
+/**
+ * Score `trajectory` for playback.
+ * `window` limits the score to hailstone indexes `[from, to]` inclusive.
+ * Notes are renumbered from 0 so the tempo stays contiguous.
+ * The closing 4 → 2 → 1 rest is marked only when that power-of-two run
+ * actually falls inside the scored slice.
+ */
+export function scoreTrajectory(
+  trajectory: Trajectory,
+  maxSteps = MAX_PLAY_STEPS,
+  window?: { from: number; to: number },
+): Score {
   const totalSteps = trajectory.values.length;
-  const limit = Math.max(0, Math.min(maxSteps, totalSteps));
-  const values = trajectory.values.slice(0, limit);
+  const bounded = window
+    ? { from: Math.max(0, Math.floor(window.from)), to: Math.floor(window.to) }
+    : { from: 0, to: totalSteps - 1 };
+  if (totalSteps === 0 || bounded.from > bounded.to || bounded.from >= totalSteps) {
+    return { seed: trajectory.seed, notes: [], cadenceAt: 0, totalSteps, truncated: false };
+  }
+  const sliceEnd = Math.min(totalSteps - 1, bounded.to);
+  const available = sliceEnd - bounded.from + 1;
+  const limit = Math.max(0, Math.min(maxSteps, available));
+  const values = trajectory.values.slice(bounded.from, bounded.from + limit);
   const fullCadence = cadenceIndex(trajectory.values);
-  const cadenceAt = fullCadence >= limit ? limit : fullCadence;
+  const sliceStop = bounded.from + limit;
+  const cadenceAt = fullCadence >= sliceStop ? limit : Math.max(0, fullCadence - bounded.from);
   const dynamics = phraseDynamics(values, cadenceAt);
   const notes: PlannedNote[] = values.map((value, step) => ({
     step,
@@ -96,7 +116,7 @@ export function scoreTrajectory(trajectory: Trajectory, maxSteps = MAX_PLAY_STEP
     notes,
     cadenceAt,
     totalSteps,
-    truncated: limit < totalSteps,
+    truncated: window ? limit < available : limit < totalSteps,
   };
 }
 

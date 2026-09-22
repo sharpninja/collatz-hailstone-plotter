@@ -414,7 +414,8 @@ input:disabled {
   gap: 8px 12px;
 }
 
-.player-row button {
+.player-row button,
+.player-range button {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: transparent;
@@ -422,9 +423,20 @@ input:disabled {
   color: var(--text);
 }
 
-.player-row button:hover:not(:disabled) { border-color: rgba(226, 182, 87, 0.55); }
+.player-row button:hover:not(:disabled),
+.player-range button:hover:not(:disabled) { border-color: rgba(226, 182, 87, 0.55); }
 
-.player-row button:disabled { opacity: 0.45; }
+.player-row button:disabled,
+.player-range button:disabled { opacity: 0.45; }
+
+.player-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.player-range .hint { flex: 1; min-width: 12rem; }
 
 #play:not(:disabled) {
   border-color: rgba(226, 182, 87, 0.7);
@@ -490,7 +502,16 @@ input:disabled {
 
 .empty p:last-child { margin: 0; color: var(--muted); }
 
-.plot-host { z-index: 1; cursor: crosshair; }
+.plot-host { z-index: 1; cursor: crosshair; touch-action: none; }
+
+.plot-host.is-brushing { cursor: ew-resize; }
+
+.selection-band {
+  fill: rgba(226, 182, 87, 0.16);
+  stroke: rgba(226, 182, 87, 0.72);
+  stroke-width: 1;
+  pointer-events: none;
+}
 
 .plot-host:empty { cursor: default; }
 

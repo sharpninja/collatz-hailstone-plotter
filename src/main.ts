@@ -12,8 +12,13 @@ import {
   buildFitPolylines,
   buildLayout,
   hitTest,
+  paintSelection,
+  pointInPlot,
   renderChart,
   renderHover,
+  stepsInAxisRange,
+  svgXToAxis,
+  type AxisRange,
   type ChartView,
   type HoverHit,
 } from './chart';
@@ -22,7 +27,7 @@ import { fitSeries, type FitResult } from './fit';
 import { groupParityForms, oddPrimePowerParitySummary, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
-import { TrajectoryPlayer, clampStepMs, scoreTrajectory } from './sonify';
+import { MAX_PLAY_STEPS, TrajectoryPlayer, clampStepMs, scoreTrajectory, type Score } from './sonify';
 import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
@@ -68,6 +73,8 @@ const rightHandInput = required<HTMLInputElement>('hand-right');
 const leftHandInput = required<HTMLInputElement>('hand-left');
 const playSeedSelect = required<HTMLSelectElement>('play-seed');
 const playStatus = required<HTMLParagraphElement>('play-status');
+const playbackRangeLabel = required<HTMLParagraphElement>('playback-range');
+const clearSelectionButton = required<HTMLButtonElement>('clear-selection');
 const levelBar = required<HTMLSpanElement>('level');
 const playerRoot = required<HTMLDivElement>('player');
 const player = new TrajectoryPlayer();
@@ -106,6 +113,17 @@ let fits: FitOutcome[] | null = null;
 let view: ChartView | null = null;
 let renderFrame = 0;
 let paintedKey = '';
+/** Inclusive playback window in current axis coordinates. Shared by every series. */
+let playbackRange: AxisRange | null = null;
+let brush: {
+  pointerId: number;
+  originAxis: number;
+  originX: number;
+  currentAxis: number;
+  moved: boolean;
+} | null = null;
+
+const BRUSH_MIN_PX = 6;
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -121,6 +139,7 @@ logInput.addEventListener('change', () => {
 });
 
 alignInput.addEventListener('change', () => {
+  if (playbackRange || brush) clearPlaybackRange();
   if (!trajectories) return;
   showStatus();
   scheduleRender();
@@ -147,8 +166,9 @@ fitButton.addEventListener('click', () => {
 playButton.addEventListener('click', () => {
   if (player.state === 'paused') {
     const trajectory = selectedTrajectory();
-    if (!trajectory) return;
-    player.play(scoreTrajectory(trajectory), readStepMs(), readHands(), playerHooks());
+    const score = trajectory ? scoreForPlayback(trajectory) : null;
+    if (!trajectory || !score) return;
+    player.play(score, readStepMs(), readHands(), playerHooks());
     syncTransport();
     return;
   }
@@ -176,9 +196,20 @@ playSeedSelect.addEventListener('change', () => {
 
 limitIterationsInput.addEventListener('change', syncIterationLimitField);
 
+clearSelectionButton.addEventListener('click', () => {
+  clearPlaybackRange();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (!brush && !playbackRange) return;
+  clearPlaybackRange();
+});
+
 clearButton.addEventListener('click', () => {
   player.stop();
   levelBar.style.width = '0';
+  resetPlaybackRange();
   seedsInput.value = '';
   maxInput.value = '10000';
   limitIterationsInput.checked = true;
@@ -214,8 +245,42 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-example
   });
 }
 
+plotHost.addEventListener('pointerdown', (event) => {
+  if (!view || event.button !== 0) return;
+  const point = eventToSvg(view.svg, event);
+  if (!point || !pointInPlot(view.layout, point.x, point.y)) {
+    if (playbackRange || brush) clearPlaybackRange();
+    return;
+  }
+  brush = {
+    pointerId: event.pointerId,
+    originAxis: svgXToAxis(view.layout, point.x),
+    originX: point.x,
+    currentAxis: svgXToAxis(view.layout, point.x),
+    moved: false,
+  };
+  plotHost.classList.add('is-brushing');
+  plotHost.setPointerCapture(event.pointerId);
+  hideTooltip();
+  renderHover(view.hoverLayer, view.layout, null);
+  event.preventDefault();
+});
+
 plotHost.addEventListener('pointermove', (event) => {
   if (!view) return;
+  if (brush && event.pointerId === brush.pointerId) {
+    const point = eventToSvg(view.svg, event);
+    if (!point) return;
+    if (Math.abs(point.x - brush.originX) >= BRUSH_MIN_PX) brush.moved = true;
+    brush.currentAxis = svgXToAxis(view.layout, point.x);
+    if (brush.moved) {
+      paintSelection(view.selectionLayer, view.layout, { start: brush.originAxis, end: brush.currentAxis });
+      playbackRangeLabel.textContent = formatPlaybackLabel({ start: brush.originAxis, end: brush.currentAxis });
+    }
+    hideTooltip();
+    renderHover(view.hoverLayer, view.layout, null);
+    return;
+  }
   const point = eventToSvg(view.svg, event);
   if (!point) {
     hideTooltip();
@@ -230,7 +295,30 @@ plotHost.addEventListener('pointermove', (event) => {
   showTooltip(hit, event.clientX, event.clientY);
 });
 
+plotHost.addEventListener('pointerup', (event) => {
+  if (!brush || event.pointerId !== brush.pointerId) return;
+  const finished = brush;
+  brush = null;
+  plotHost.classList.remove('is-brushing');
+  if (plotHost.hasPointerCapture(event.pointerId)) plotHost.releasePointerCapture(event.pointerId);
+  if (!finished.moved || !view) {
+    applySelectionBand();
+    syncPlaybackRangeLabel();
+    return;
+  }
+  commitPlaybackRange({ start: finished.originAxis, end: finished.currentAxis });
+});
+
+plotHost.addEventListener('pointercancel', (event) => {
+  if (!brush || event.pointerId !== brush.pointerId) return;
+  brush = null;
+  plotHost.classList.remove('is-brushing');
+  applySelectionBand();
+  syncPlaybackRangeLabel();
+});
+
 plotHost.addEventListener('pointerleave', () => {
+  if (brush) return;
   hideTooltip();
   if (view) renderHover(view.hoverLayer, view.layout, null);
 });
@@ -340,6 +428,7 @@ function generate(): void {
 
   player.stop();
   levelBar.style.width = '0';
+  resetPlaybackRange();
   lastParsed = parsed;
   iterationLimitEnabled = limitIterations;
   trajectories = parsed.seeds.map((seed) => hailstone(seed, iterationCap ?? EMERGENCY_ITERATION_CAP));
@@ -385,6 +474,70 @@ function playerHooks(): { onFrame: (frame: { step: number; steps: number; level:
   };
 }
 
+function orderedRange(range: AxisRange): AxisRange {
+  return {
+    start: Math.min(range.start, range.end),
+    end: Math.max(range.start, range.end),
+  };
+}
+
+function formatPlaybackLabel(range: AxisRange | null): string {
+  if (!range) return 'Playback: full path';
+  const span = orderedRange(range);
+  return `Playback: iterations ${formatCount(span.start)}–${formatCount(span.end)}`;
+}
+
+function syncPlaybackRangeLabel(): void {
+  playbackRangeLabel.textContent = formatPlaybackLabel(playbackRange);
+  clearSelectionButton.disabled = playbackRange === null;
+}
+
+function applySelectionBand(): void {
+  if (!view) return;
+  paintSelection(view.selectionLayer, view.layout, playbackRange);
+}
+
+function resetPlaybackRange(): void {
+  playbackRange = null;
+  brush = null;
+  plotHost.classList.remove('is-brushing');
+  syncPlaybackRangeLabel();
+  applySelectionBand();
+}
+
+function clearPlaybackRange(): void {
+  const wasBusy = player.state !== 'idle';
+  resetPlaybackRange();
+  if (!wasBusy) return;
+  player.stop();
+  levelBar.style.width = '0';
+  syncTransport();
+}
+
+function commitPlaybackRange(range: AxisRange): void {
+  playbackRange = orderedRange(range);
+  if (player.state !== 'idle') {
+    player.stop();
+    levelBar.style.width = '0';
+  }
+  syncPlaybackRangeLabel();
+  applySelectionBand();
+  syncTransport();
+}
+
+function scoreForPlayback(trajectory: Trajectory): Score | null {
+  if (!playbackRange || !view) return scoreTrajectory(trajectory);
+  const window = stepsInAxisRange(
+    trajectory.values.length - 1,
+    view.layout.maxStep,
+    view.layout.align,
+    playbackRange,
+  );
+  if (!window) return null;
+  const score = scoreTrajectory(trajectory, MAX_PLAY_STEPS, window);
+  return score.notes.length === 0 ? null : score;
+}
+
 function startPlayback(): void {
   const trajectory = selectedTrajectory();
   if (!trajectory) return;
@@ -392,10 +545,21 @@ function startPlayback(): void {
     playStatus.textContent = 'Turn on the right hand, the left hand, or both.';
     return;
   }
-  const score = scoreTrajectory(trajectory);
+  const score = scoreForPlayback(trajectory);
+  if (!score) {
+    playStatus.textContent = `Nothing in that range for ${formatExact(trajectory.seed)}.`;
+    return;
+  }
   player.play(score, readStepMs(), readHands(), playerHooks());
-  const clipped = score.truncated ? ` Playing the first ${formatCount(score.notes.length)} of ${formatCount(score.totalSteps)} steps.` : '';
-  playStatus.textContent = `Playing ${formatExact(trajectory.seed)}.${clipped}`;
+  let detail = '';
+  if (score.truncated && playbackRange) {
+    detail = ` Playing the first ${formatCount(score.notes.length)} steps of iterations ${formatCount(playbackRange.start)}–${formatCount(playbackRange.end)}.`;
+  } else if (score.truncated) {
+    detail = ` Playing the first ${formatCount(score.notes.length)} of ${formatCount(score.totalSteps)} steps.`;
+  } else if (playbackRange) {
+    detail = ` Iterations ${formatCount(playbackRange.start)}–${formatCount(playbackRange.end)}.`;
+  }
+  playStatus.textContent = `Playing ${formatExact(trajectory.seed)}.${detail}`;
   syncTransport();
 }
 
@@ -429,6 +593,7 @@ function syncTransport(): void {
 function abandonPlot(): void {
   player.stop();
   levelBar.style.width = '0';
+  resetPlaybackRange();
   trajectories = null;
   view = null;
   downloadButton.disabled = true;
@@ -499,6 +664,7 @@ function render(): void {
     ? `${statusLine(trajectories)} Paths are shifted so they all end at 1.`
     : statusLine(trajectories);
   view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)), beatsInput.checked);
+  applySelectionBand();
 }
 
 function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hailstone } from './collatz';
+import { stepsInAxisRange } from './chart';
 import { isOddPrimePower } from './parse';
 import {
   LEFT_HAND_ROLL,
@@ -115,5 +116,54 @@ describe('trajectory score', () => {
     const plan = schedulePlan(score, 200, { right: true, left: true });
     const peakGain = plan.find((note) => note.time >= peak!.step * 0.2 && note.time < (peak!.step + 1) * 0.2);
     expect(peakGain?.gain).toBeCloseTo(peak!.dynamics);
+  });
+
+  it('scores only the steps inside an axis range and skips a cadence that falls outside it', () => {
+    const longer = hailstone(27n, 10_000);
+    const shorter = hailstone(47n, 10_000);
+    const maxStep = longer.values.length - 1;
+    expect(maxStep).toBe(111);
+    expect(shorter.values.length - 1).toBe(104);
+
+    const off = stepsInAxisRange(maxStep, maxStep, false, { start: 40, end: 90 });
+    const aligned = stepsInAxisRange(104, maxStep, true, { start: 40, end: 90 });
+    expect(off).toEqual({ from: 40, to: 90 });
+    expect(aligned).toEqual({ from: 33, to: 83 });
+
+    const middle = scoreTrajectory(longer, 2_000, off!);
+    expect(middle.notes).toHaveLength(51);
+    expect(middle.notes[0].value).toBe(longer.values[40]);
+    expect(middle.notes.at(-1)!.value).toBe(longer.values[90]);
+    expect(middle.notes.map((note) => note.step)).toEqual(middle.notes.map((_, index) => index));
+    expect(middle.notes.some((note) => note.hand === 'both')).toBe(false);
+    expect(middle.truncated).toBe(false);
+    const plan = schedulePlan(middle, 100, { right: true, left: true });
+    const times = plan.map((note) => note.time);
+    expect(Math.min(...times)).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...times)).toBeLessThan(0.1);
+    expect(Math.max(...times)).toBeGreaterThanOrEqual(5);
+    expect(Math.max(...times)).toBeLessThan(5.1);
+
+    const shifted = scoreTrajectory(shorter, 2_000, aligned!);
+    expect(shifted.notes[0].value).toBe(shorter.values[33]);
+    expect(shifted.notes.at(-1)!.value).toBe(shorter.values[83]);
+    expect(shifted.notes.some((note) => note.hand === 'both')).toBe(false);
+
+    expect(stepsInAxisRange(104, maxStep, true, { start: 0, end: 6 })).toBeNull();
+    expect(scoreTrajectory(longer, 2_000, { from: 5, to: 4 }).notes).toHaveLength(0);
+
+    const fullCadence = cadenceIndex(longer.values);
+    const tail = scoreTrajectory(longer, 2_000, { from: fullCadence, to: longer.values.length - 1 });
+    expect(tail.notes.length).toBeGreaterThan(0);
+    expect(tail.notes.every((note) => note.hand === 'both')).toBe(true);
+    expect(tail.notes.map((note) => note.value)).toEqual(longer.values.slice(fullCadence));
+
+    const partial = scoreTrajectory(longer, 2_000, { from: longer.values.length - 2, to: longer.values.length - 1 });
+    expect(partial.notes.map((note) => note.value)).toEqual([2n, 1n]);
+    expect(partial.notes.every((note) => note.hand === 'both')).toBe(true);
+
+    const before = scoreTrajectory(longer, 2_000, { from: 0, to: fullCadence - 1 });
+    expect(before.notes.some((note) => note.hand === 'both')).toBe(false);
+    expect(before.notes.at(-1)!.value).toBe(longer.values[fullCadence - 1]);
   });
 });
