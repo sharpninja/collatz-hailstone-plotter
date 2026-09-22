@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFitPolylines, buildLayout, dataToSvg, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
+import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -159,6 +159,15 @@ describe('buildLayout', () => {
     expect(new Set(layout.series.map((item) => item.color)).size).toBe(3);
   });
 
+  it('cycles series colors once there are more seeds than palette entries', () => {
+    const series = Array.from({ length: SERIES_COLORS.length + 1 }, (_, index) => hailstone(BigInt(index + 1), 30));
+    const layout = buildLayout(series, { width: 800, height: 480, logY: false });
+    expect(layout.series).toHaveLength(SERIES_COLORS.length + 1);
+    expect(layout.series[0].color).toBe(SERIES_COLORS[0]);
+    expect(layout.series[SERIES_COLORS.length].color).toBe(SERIES_COLORS[0]);
+    expect(layout.series[1].color).toBe(SERIES_COLORS[1]);
+  });
+
   it('reads the sample under the cursor, including the peak of 27', () => {
     const layout = buildLayout([hailstone(27n, 10_000)], { width: 960, height: 600, logY: false });
     const peak = layout.series[0].samples.find((sample) => sample.exact === 9232n);
@@ -210,39 +219,46 @@ describe('buildLayout', () => {
     const peakTall = layout.series[1].samples.find((sample) => sample.peak)!;
     expect(peakTall.exact).toBeGreaterThan(peakShort.exact);
     expect(peakTall.y).toBeLessThan(peakShort.y);
-    expect(layout.xLabel).toBe('Iteration');
+    expect(layout.xLabel).toBe('Iterations to 1');
     expect(layout.yLabel).toBe('Value');
   });
 
-  it('normalizes each series to its own length and peak', () => {
-    const short = hailstone(8n, 100);
-    const tall = hailstone(27n, 10_000);
-    const layout = buildLayout([short, tall], { width: 800, height: 480, logY: false, align: true });
-    const peakShort = layout.series[0].samples.find((sample) => sample.peak)!;
-    const peakTall = layout.series[1].samples.find((sample) => sample.peak)!;
-    expect(peakShort.y).toBeCloseTo(peakTall.y, 4);
-    expect(peakShort.y).toBeCloseTo(layout.plot.y, 4);
-    const endShort = layout.series[0].samples.at(-1)!;
-    const endTall = layout.series[1].samples.at(-1)!;
-    expect(endShort.x).toBeCloseTo(endTall.x, 4);
-    expect(endShort.x).toBeCloseTo(layout.plot.x + layout.plot.w, 4);
-    expect(endShort.y).toBeGreaterThan(peakShort.y);
-    expect(layout.series[0].samples[0].x).toBeCloseTo(layout.series[1].samples[0].x, 4);
-    expect(layout.xLabel).toBe('Progress');
-    expect(layout.yLabel).toBe('Value / peak');
+  it('right-aligns paths so they all end at 1', () => {
+    expect(alignedStep(0, 104, 111)).toBe(7);
+    expect(alignedStep(104, 104, 111)).toBe(111);
+    expect(alignedStep(111, 111, 111)).toBe(111);
+
+    const longer = hailstone(27n, 10_000);
+    const shorter = hailstone(47n, 10_000);
+    expect(longer.values.length - 1).toBe(111);
+    expect(shorter.values.length - 1).toBe(104);
+    const layout = buildLayout([longer, shorter], { width: 800, height: 480, logY: false, align: true });
+    const path27 = layout.series[0];
+    const path47 = layout.series[1];
+    const end27 = path27.samples.at(-1)!;
+    const end47 = path47.samples.at(-1)!;
+    expect(end27.exact).toBe(1n);
+    expect(end47.exact).toBe(1n);
+    expect(end27.x).toBeCloseTo(end47.x, 5);
+    expect(path47.samples[0].x).toBeCloseTo(path27.samples[7].x, 5);
+    expect(path27.samples[0].x).toBeLessThan(path47.samples[0].x);
+    expect(layout.xLabel).toBe('Iterations to 1');
+    expect(layout.yLabel).toBe('Value');
+    const peak27 = path27.samples.find((sample) => sample.peak)!;
+    expect(peak27.y).toBeLessThan(path47.samples[0].y);
     for (const series of layout.series) {
       for (const sample of series.samples) {
-        const point = dataToSvg(layout, sample.step, sample.value, {
-          steps: series.steps,
-          peak: Number(series.peak),
-        });
+        const point = dataToSvg(layout, sample.step, sample.value, { steps: series.steps });
         expect(point.x).toBeCloseTo(sample.x);
         expect(point.y).toBeCloseTo(sample.y);
       }
     }
-    const hit = hitTest(layout, endTall.x - 1, layout.plot.y + layout.plot.h / 2);
+    const hit = hitTest(layout, end27.x, end27.y);
     expect(hit?.align).toBe(true);
     expect(hit?.entries.map((entry) => entry.exact)).toEqual([1n, 1n]);
+    const start47 = hitTest(layout, path47.samples[0].x, path47.samples[0].y);
+    expect(start47?.entries.map((entry) => entry.seed)).toEqual([27n, 47n]);
+    expect(start47?.entries.map((entry) => entry.step)).toEqual([7, 0]);
   });
 
   it('plots a single point at 1 without a curve', () => {

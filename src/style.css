@@ -206,6 +206,17 @@ button:disabled {
   cursor: not-allowed;
 }
 
+input:disabled {
+  color: var(--faint);
+  background: #0c0b09;
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+.field:has(input:disabled) > label {
+  color: var(--faint);
+}
+
 .message { margin-top: 12px; display: grid; gap: 6px; }
 
 .message p { margin: 0; font-size: 0.9rem; }
@@ -216,7 +227,17 @@ button:disabled {
 
 .fit-block, .patterns-block { display: grid; gap: 10px; }
 
-.fit-block[hidden], .patterns-block[hidden] { display: none; }
+.common-block { display: grid; gap: 6px; }
+
+.fit-block[hidden], .patterns-block[hidden], .common-block[hidden] { display: none; }
+
+.common-value {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  line-height: 1.2;
+  color: var(--accent);
+}
 
 .patterns { display: grid; gap: 12px; }
 

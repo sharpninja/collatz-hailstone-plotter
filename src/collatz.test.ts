@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hailstone, peakValue } from './collatz';
-import { isOddPrimePower, parseMaxIterations, parseSeeds } from './parse';
+import { EMERGENCY_ITERATION_CAP, firstCommonValue, hailstone, peakValue, type Trajectory } from './collatz';
+import { MAX_SEEDS, MAX_SEEDS_LIMIT, isOddPrimePower, parseMaxIterations, parseMaxSeeds, parseSeeds } from './parse';
 
 describe('hailstone', () => {
   it('stops immediately at 1', () => {
@@ -41,12 +41,72 @@ describe('hailstone', () => {
     expect(trajectory.values).toHaveLength(11);
   });
 
+  it('reaches 1 for 27 under the emergency ceiling', () => {
+    expect(EMERGENCY_ITERATION_CAP).toBe(10_000_000);
+    const trajectory = hailstone(27n, EMERGENCY_ITERATION_CAP);
+    expect(trajectory.reachedOne).toBe(true);
+    expect(trajectory.stoppedForSize).toBe(false);
+    expect(trajectory.values).toHaveLength(112);
+  });
+
   it('stops before a term overflows the chart', () => {
     const seed = 10n ** 308n - 1n;
     const huge = hailstone(seed, 5);
     expect(huge.stoppedForSize).toBe(true);
     expect(huge.reachedOne).toBe(false);
     expect(huge.values).toEqual([seed]);
+  });
+});
+
+function path(seed: bigint, values: bigint[]): Trajectory {
+  return { seed, values, reachedOne: values.at(-1) === 1n, stoppedForSize: false };
+}
+
+describe('firstCommonValue', () => {
+  it('names 47 as the first value shared by 27, 31, 41, and 47', () => {
+    const series = [27n, 31n, 41n, 47n].map((seed) => hailstone(seed, 10_000));
+    const found = firstCommonValue(series);
+    expect(found).not.toBeNull();
+    expect(found?.onlyAtOne).toBe(false);
+    expect(found?.none).toBe(false);
+    expect(found?.value).toBe(47n);
+    expect(found?.hits).toEqual([
+      { seed: 27n, index: 7 },
+      { seed: 31n, index: 2 },
+      { seed: 41n, index: 5 },
+      { seed: 47n, index: 0 },
+    ]);
+  });
+
+  it('skips a single seed and reports a meeting that is only 1', () => {
+    expect(firstCommonValue([hailstone(27n, 100)])).toBeNull();
+    const onlyOne = firstCommonValue([hailstone(1n, 10), hailstone(2n, 10)]);
+    expect(onlyOne?.value).toBeNull();
+    expect(onlyOne?.onlyAtOne).toBe(true);
+    expect(onlyOne?.none).toBe(false);
+  });
+
+  it('reports no shared term when a cap stops the runs before they meet', () => {
+    const found = firstCommonValue([hailstone(27n, 4), hailstone(31n, 1)]);
+    expect(found?.none).toBe(true);
+    expect(found?.value).toBeNull();
+    expect(found?.onlyAtOne).toBe(false);
+  });
+
+  it('breaks ties by the sum of indexes, then the smaller value', () => {
+    const bySum = firstCommonValue([
+      path(9n, [9n, 6n, 3n, 1n]),
+      path(6n, [6n, 3n, 9n, 1n]),
+    ]);
+    expect(bySum?.value).toBe(6n);
+    expect(bySum?.hits.map((hit) => hit.index)).toEqual([1, 0]);
+
+    const byValue = firstCommonValue([
+      path(4n, [4n, 8n, 1n]),
+      path(8n, [8n, 4n, 1n]),
+    ]);
+    expect(byValue?.value).toBe(4n);
+    expect(byValue?.hits.map((hit) => hit.index)).toEqual([0, 1]);
   });
 });
 
@@ -68,6 +128,54 @@ describe('parseSeeds', () => {
     expect(parsed.seeds).toHaveLength(12);
     expect(parsed.omitted).toBe(2);
     expect(parsed.overflow).toBeNull();
+  });
+
+  it('expands past 12 seeds when the cap is raised', () => {
+    const blocked = parseSeeds('1..31');
+    expect(blocked.seeds).toEqual([]);
+    expect(blocked.overflow).toBe(31n);
+
+    const allowed = parseSeeds('1..31', 31);
+    expect(allowed.overflow).toBeNull();
+    expect(allowed.seeds).toHaveLength(31);
+    expect(allowed.seeds[0]).toBe(1n);
+    expect(allowed.seeds[30]).toBe(31n);
+
+    const stillOver = parseSeeds('1..40', 31);
+    expect(stillOver.seeds).toEqual([]);
+    expect(stillOver.overflow).toBe(40n);
+
+    const oddBlocked = parseSeeds('oddprimepowers:2..107');
+    expect(oddBlocked.seeds).toEqual([]);
+    expect(oddBlocked.overflow).toBe(31n);
+    expect(oddBlocked.oddPrimePowerOnly).toBe(false);
+
+    const odd = parseSeeds('oddprimepowers:2..107', 31);
+    expect(odd.overflow).toBeNull();
+    expect(odd.overCap).toBe(false);
+    expect(odd.seeds).toHaveLength(31);
+    expect(odd.oddPrimePowerOnly).toBe(true);
+    expect(odd.seeds[0]).toBe(2n);
+    expect(odd.seeds).toContain(8n);
+    expect(odd.seeds).toContain(27n);
+    expect(odd.seeds).toContain(32n);
+    expect(odd.seeds[odd.seeds.length - 1]).toBe(107n);
+    expect(odd.seeds).not.toContain(9n);
+    expect(odd.seeds).not.toContain(25n);
+
+    const individuals = parseSeeds(Array.from({ length: 20 }, (_, i) => String(i + 1)).join(','), 20);
+    expect(individuals.seeds).toHaveLength(20);
+    expect(individuals.omitted).toBe(0);
+    const trimmed = parseSeeds(Array.from({ length: 20 }, (_, i) => String(i + 1)).join(','), 15);
+    expect(trimmed.seeds).toHaveLength(15);
+    expect(trimmed.seeds[0]).toBe(1n);
+    expect(trimmed.seeds[14]).toBe(15n);
+    expect(trimmed.omitted).toBe(5);
+
+    expect(parseSeeds('1..600', MAX_SEEDS_LIMIT + 50).overflow).toBe(600n);
+    expect(parseSeeds('1..600', MAX_SEEDS_LIMIT + 50).seeds).toEqual([]);
+    expect(parseSeeds('primes:1..200', 50).seeds).toHaveLength(46);
+    expect(parseSeeds('primes:1..200').overflow).toBe(46n);
   });
 
   it('expands inclusive ranges in first-seen order', () => {
@@ -411,5 +519,17 @@ describe('parseMaxIterations', () => {
     expect(parseMaxIterations('200001')).toBeNull();
     expect(parseMaxIterations('1.5')).toBeNull();
     expect(parseMaxIterations('')).toBeNull();
+  });
+});
+
+describe('parseMaxSeeds', () => {
+  it('accepts a whole number from 1 through the control limit', () => {
+    expect(parseMaxSeeds(String(MAX_SEEDS))).toBe(MAX_SEEDS);
+    expect(parseMaxSeeds('31')).toBe(31);
+    expect(parseMaxSeeds(String(MAX_SEEDS_LIMIT))).toBe(MAX_SEEDS_LIMIT);
+    expect(parseMaxSeeds('0')).toBeNull();
+    expect(parseMaxSeeds(String(MAX_SEEDS_LIMIT + 1))).toBeNull();
+    expect(parseMaxSeeds('1.5')).toBeNull();
+    expect(parseMaxSeeds('')).toBeNull();
   });
 });

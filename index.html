@@ -51,7 +51,7 @@
                 autocapitalize="off"
                 placeholder="e.g. 27, 20..27, or primes:20..30"
               >27</textarea>
-              <p class="hint">Positive integers, commas, or spaces. 20..27 is every integer. primes:20..30 is primes only. oddprimepowers:8..32 keeps prime powers with an odd exponent (primes, and 27 = 3³), a stress-test sample. Up to 12 seeds.</p>
+              <p class="hint">Positive integers, commas, or spaces. 20..27 is every integer. primes:20..30 is primes only. oddprimepowers:8..32 keeps prime powers with an odd exponent (primes, and 27 = 3³), a stress-test sample. Max seeds to plot starts at 12; raise it for a larger range.</p>
             </div>
 
             <div class="examples" role="group" aria-label="Examples">
@@ -63,10 +63,20 @@
               <button type="button" data-example="12, 19, 27" data-log="on">12, 19, 27</button>
             </div>
 
+            <label class="check" for="limit-iterations">
+              <input id="limit-iterations" type="checkbox" checked />
+              <span>Limit max iterations</span>
+            </label>
             <div class="field">
               <label for="max-steps">Max iterations</label>
               <input id="max-steps" type="number" inputmode="numeric" min="1" max="200000" step="1" value="10000" />
-              <p class="hint">Safety cap. A run stops at 1, or when it has taken this many steps.</p>
+              <p class="hint">On by default. A run stops at 1, or after this many steps (up to 200,000). Turn the limit off to follow each seed to 1; the number is then ignored. An emergency stop at 10,000,000 steps still applies, and the page warns only if a seed hits it. With the limit on, every seed shares a 500,000-step budget.</p>
+            </div>
+
+            <div class="field">
+              <label for="max-seeds">Max seeds to plot</label>
+              <input id="max-seeds" type="number" inputmode="numeric" min="1" max="500" step="1" value="12" />
+              <p class="hint">Default 12. Raise this to plot a larger range, up to 500 — for example an odd-prime-power span of 31 seeds. More curves share the 500,000-step budget and take longer to draw. Colors repeat after the twelfth curve. The Hearing menu lists every plotted seed.</p>
             </div>
 
             <label class="check" for="log-scale">
@@ -76,9 +86,9 @@
 
             <label class="check" for="align-plots">
               <input id="align-plots" type="checkbox" />
-              <span>Align / normalize</span>
+              <span>Align</span>
             </label>
-            <p class="hint">Stretch each path to its own length and peak. Off keeps true iterations and Collatz values on one shared pair of axes.</p>
+            <p class="hint">Align: all paths end together at 1 (shorter seeds start later on the axis). Off keeps every seed starting at 0.</p>
 
             <label class="check" for="mark-beats">
               <input id="mark-beats" type="checkbox" checked />
@@ -94,6 +104,12 @@
             </div>
             <div id="form-message" class="message" aria-live="polite"></div>
           </form>
+
+          <section id="common-block" class="common-block" hidden aria-labelledby="common-heading">
+            <h2 id="common-heading">First common value</h2>
+            <p id="common-value" class="common-value"></p>
+            <p id="common-note" class="hint"></p>
+          </section>
 
           <section id="fit-block" class="fit-block" hidden aria-labelledby="fit-heading">
             <h2 id="fit-heading">Function of N</h2>

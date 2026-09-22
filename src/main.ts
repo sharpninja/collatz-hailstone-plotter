@@ -1,4 +1,12 @@
-import { exceedsSafeInteger, hailstone, peakValue, type Trajectory } from './collatz';
+import {
+  EMERGENCY_ITERATION_CAP,
+  exceedsSafeInteger,
+  firstCommonValue,
+  hailstone,
+  peakValue,
+  type FirstCommonValue,
+  type Trajectory,
+} from './collatz';
 import {
   SERIES_COLORS,
   buildFitPolylines,
@@ -18,14 +26,18 @@ import { TrajectoryPlayer, clampStepMs, scoreTrajectory } from './sonify';
 import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
+  MAX_SEEDS_LIMIT,
   TOTAL_STEP_BUDGET,
   parseMaxIterations,
+  parseMaxSeeds,
   parseSeeds,
   type ParsedSeeds,
 } from './parse';
 
 const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
+const limitIterationsInput = required<HTMLInputElement>('limit-iterations');
+const maxSeedsInput = required<HTMLInputElement>('max-seeds');
 const logInput = required<HTMLInputElement>('log-scale');
 const alignInput = required<HTMLInputElement>('align-plots');
 const beatsInput = required<HTMLInputElement>('mark-beats');
@@ -45,6 +57,9 @@ const patternsBlock = required<HTMLElement>('patterns-block');
 const patternsHeading = required<HTMLHeadingElement>('patterns-heading');
 const patternsNote = required<HTMLParagraphElement>('patterns-note');
 const patterns = required<HTMLDivElement>('patterns');
+const commonBlock = required<HTMLElement>('common-block');
+const commonValue = required<HTMLParagraphElement>('common-value');
+const commonNote = required<HTMLParagraphElement>('common-note');
 const playButton = required<HTMLButtonElement>('play');
 const pauseButton = required<HTMLButtonElement>('pause-audio');
 const stopButton = required<HTMLButtonElement>('stop-audio');
@@ -84,6 +99,9 @@ interface FitOutcome {
 
 let trajectories: Trajectory[] | null = null;
 let lastParsed: ParsedSeeds | null = null;
+let seedCap = MAX_SEEDS;
+/** True when the plot on screen was drawn with the user iteration cap. */
+let iterationLimitEnabled = true;
 let fits: FitOutcome[] | null = null;
 let view: ChartView | null = null;
 let renderFrame = 0;
@@ -156,11 +174,18 @@ playSeedSelect.addEventListener('change', () => {
   syncTransport();
 });
 
+limitIterationsInput.addEventListener('change', syncIterationLimitField);
+
 clearButton.addEventListener('click', () => {
   player.stop();
   levelBar.style.width = '0';
   seedsInput.value = '';
   maxInput.value = '10000';
+  limitIterationsInput.checked = true;
+  syncIterationLimitField();
+  maxSeedsInput.value = String(MAX_SEEDS);
+  seedCap = MAX_SEEDS;
+  iterationLimitEnabled = true;
   logInput.checked = false;
   alignInput.checked = false;
   trajectories = null;
@@ -171,6 +196,7 @@ clearButton.addEventListener('click', () => {
   setMessage([]);
   renderLegend(null);
   renderPatterns(null);
+  renderCommon(null);
   resetFit();
   syncTransport();
   scheduleRender();
@@ -212,10 +238,27 @@ plotHost.addEventListener('pointerleave', () => {
 const observer = new ResizeObserver(() => scheduleRender());
 observer.observe(plotHost);
 
+syncIterationLimitField();
 generate();
 
+function syncIterationLimitField(): void {
+  maxInput.disabled = !limitIterationsInput.checked;
+}
+
 function generate(): void {
-  const parsed = parseSeeds(seedsInput.value);
+  const maxSeeds = parseMaxSeeds(maxSeedsInput.value);
+  if (maxSeeds === null) {
+    abandonPlot();
+    setMessage([
+      {
+        kind: 'error',
+        text: `Set max seeds to a whole number from 1 to ${formatCount(MAX_SEEDS_LIMIT)}.`,
+      },
+    ]);
+    return;
+  }
+  seedCap = maxSeeds;
+  const parsed = parseSeeds(seedsInput.value, maxSeeds);
   const maxIterations = parseMaxIterations(maxInput.value);
   if (parsed.emptyPrimes.length > 0 || parsed.emptyPrimePowers.length > 0 || parsed.emptyOddPrimePowers.length > 0) {
     abandonPlot();
@@ -248,7 +291,7 @@ function generate(): void {
     setMessage([
       {
         kind: 'error',
-        text: `That includes more than ${MAX_SEEDS} seeds. At most ${MAX_SEEDS} can be plotted.`,
+        text: overCapMessage(seedCap),
       },
       ...warningParts(parsed, []),
     ]);
@@ -259,7 +302,7 @@ function generate(): void {
     setMessage([
       {
         kind: 'error',
-        text: `That expands to ${formatExact(parsed.overflow)} seeds. At most ${MAX_SEEDS} can be plotted.`,
+        text: overflowMessage(parsed.overflow, seedCap),
       },
       ...warningParts(parsed, []),
     ]);
@@ -274,7 +317,9 @@ function generate(): void {
     setMessage([{ kind: 'error', text: lead }, ...warningParts(parsed, [])]);
     return;
   }
-  if (maxIterations === null) {
+  const limitIterations = limitIterationsInput.checked;
+  const iterationCap = limitIterations ? maxIterations : EMERGENCY_ITERATION_CAP;
+  if (limitIterations && iterationCap === null) {
     setMessage([
       {
         kind: 'error',
@@ -283,7 +328,7 @@ function generate(): void {
     ]);
     return;
   }
-  if (parsed.seeds.length * maxIterations > TOTAL_STEP_BUDGET) {
+  if (limitIterations && iterationCap !== null && parsed.seeds.length * iterationCap > TOTAL_STEP_BUDGET) {
     setMessage([
       {
         kind: 'error',
@@ -296,13 +341,15 @@ function generate(): void {
   player.stop();
   levelBar.style.width = '0';
   lastParsed = parsed;
-  trajectories = parsed.seeds.map((seed) => hailstone(seed, maxIterations));
+  iterationLimitEnabled = limitIterations;
+  trajectories = parsed.seeds.map((seed) => hailstone(seed, iterationCap ?? EMERGENCY_ITERATION_CAP));
   downloadButton.disabled = false;
   fitButton.disabled = false;
   resetFit();
   showStatus();
   renderLegend(trajectories);
   renderPatterns(trajectories);
+  renderCommon(trajectories);
   syncTransport();
   scheduleRender();
 }
@@ -389,6 +436,7 @@ function abandonPlot(): void {
   resetFit();
   renderPatterns(null);
   renderLegend(null);
+  renderCommon(null);
   syncTransport();
   scheduleRender();
 }
@@ -399,27 +447,24 @@ function showStatus(): void {
     { kind: 'ok', text: statusLine(trajectories) },
     ...warningParts(lastParsed, trajectories),
   ];
-  const hint = scaleHint(trajectories, logInput.checked, alignInput.checked);
+  const hint = scaleHint(trajectories, logInput.checked);
   if (hint) parts.push({ kind: 'warn', text: hint });
   if (alignInput.checked && trajectories.length > 1) {
-    const height = logInput.checked
-      ? 'height is the log of its value divided by the log of its peak'
-      : 'height is its value divided by its peak';
     parts.push({
       kind: 'warn',
-      text: `Align is on: horizontal position is each path’s progress, and ${height}.`,
+      text: 'Align is on: every path ends together at 1. Shorter seeds start later on the axis.',
     });
   }
   setMessage(parts);
 }
 
-function scaleHint(series: Trajectory[], logY: boolean, align: boolean): string | null {
-  if (logY || align || series.length < 2) return null;
+function scaleHint(series: Trajectory[], logY: boolean): string | null {
+  if (logY || series.length < 2) return null;
   const peaks = series.map((trajectory) => peakValue(trajectory.values));
   const tallest = peaks.reduce((best, peak) => (peak > best ? peak : best));
   const shortest = peaks.reduce((best, peak) => (peak < best ? peak : best));
   if (shortest < 1n || tallest / shortest < 40n) return null;
-  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on Align / normalize to compare shapes, or the logarithmic axis to compare true values.';
+  return 'One peak is much taller than the others, so the smaller paths sit near the baseline. Turn on the logarithmic axis to compare true values.';
 }
 
 function scheduleRender(): void {
@@ -451,7 +496,7 @@ function render(): void {
     align: alignInput.checked,
   });
   const summary = alignInput.checked
-    ? `${statusLine(trajectories)} Axes show each path’s progress and share of its peak.`
+    ? `${statusLine(trajectories)} Paths are shifted so they all end at 1.`
     : statusLine(trajectories);
   view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)), beatsInput.checked);
 }
@@ -635,6 +680,21 @@ function seriesKey(series: Trajectory[]): string {
     .join(',');
 }
 
+function overCapMessage(cap: number): string {
+  const limit = `At most ${formatCount(cap)} can be plotted.`;
+  if (cap >= MAX_SEEDS_LIMIT) return `That includes more than ${formatCount(cap)} seeds. ${limit}`;
+  return `That includes more than ${formatCount(cap)} seeds. ${limit} Raise Max seeds to plot if you want a larger set (up to ${formatCount(MAX_SEEDS_LIMIT)}).`;
+}
+
+function overflowMessage(count: bigint, cap: number): string {
+  const size = `That expands to ${formatExact(count)} seeds. At most ${formatCount(cap)} can be plotted.`;
+  if (count <= BigInt(cap)) return size;
+  if (count <= BigInt(MAX_SEEDS_LIMIT)) {
+    return `${size} Raise Max seeds to plot to at least ${formatExact(count)}.`;
+  }
+  return `${size} Max seeds to plot only goes up to ${formatCount(MAX_SEEDS_LIMIT)}.`;
+}
+
 function emptySetMessage(ranges: string[], noun: string): string {
   if (ranges.length === 1) return `No ${noun} in ${ranges[0]}.`;
   if (ranges.length === 2) return `No ${noun} in ${ranges[0]} or ${ranges[1]}.`;
@@ -663,7 +723,10 @@ function warningParts(
     });
   }
   if (parsed.omitted > 0) {
-    parts.push({ kind: 'warn', text: `Only the first ${MAX_SEEDS} seeds are plotted.` });
+    parts.push({
+      kind: 'warn',
+      text: `Only the first ${formatCount(seedCap)} seeds are plotted. ${formatCount(parsed.omitted)} more were skipped.`,
+    });
   }
   if (parsed.reversed > 0) {
     parts.push({
@@ -677,7 +740,10 @@ function warningParts(
   const capped = series.filter((trajectory) => !trajectory.reachedOne && !trajectory.stoppedForSize);
   if (capped.length > 0) {
     const names = capped.map((trajectory) => formatExact(trajectory.seed)).join(', ');
-    parts.push({ kind: 'warn', text: `${names} hit the iteration cap before reaching 1.` });
+    const reason = iterationLimitEnabled
+      ? 'hit the iteration cap before reaching 1.'
+      : `hit the emergency ceiling of ${formatCount(EMERGENCY_ITERATION_CAP)} steps before reaching 1.`;
+    parts.push({ kind: 'warn', text: `${names} ${reason}` });
   }
   const oversized = series.filter((trajectory) => trajectory.stoppedForSize);
   if (oversized.length > 0) {
@@ -701,10 +767,54 @@ function statusLine(series: Trajectory[]): string {
     const seed = formatExact(trajectory.seed);
     if (trajectory.reachedOne) return `Plotted ${seed}. Reached 1 in ${steps} steps; peak ${peak}.`;
     if (trajectory.stoppedForSize) return `Plotted ${seed}. Stopped when values outgrew the chart; peak ${peak}.`;
+    if (!iterationLimitEnabled) {
+      return `Plotted ${seed}. Stopped at the emergency ceiling of ${formatCount(EMERGENCY_ITERATION_CAP)} steps without reaching 1; peak ${peak}.`;
+    }
     return `Plotted ${seed}. Stopped at the cap after ${steps} steps without reaching 1; peak ${peak}.`;
   }
   const reached = series.filter((trajectory) => trajectory.reachedOne).length;
   return `Plotted ${series.length} trajectories. ${reached} of them reached 1.`;
+}
+
+function renderCommon(series: Trajectory[] | null): void {
+  const found = series && series.length >= 2 ? firstCommonValue(series) : null;
+  if (!found) {
+    commonBlock.hidden = true;
+    commonValue.textContent = '';
+    commonNote.textContent = '';
+    return;
+  }
+  commonBlock.hidden = false;
+  if (found.none) {
+    commonValue.textContent = 'No shared value';
+    commonNote.textContent = iterationLimitEnabled
+      ? 'These runs do not share a term. Raise the iteration cap, or turn the limit off, and they may meet.'
+      : 'These runs do not share a term before the emergency ceiling.';
+    return;
+  }
+  if (found.onlyAtOne || found.value === null) {
+    commonValue.textContent = 'Meet only at 1';
+    commonNote.textContent = '1 is the only value in every sequence.';
+    return;
+  }
+  commonValue.textContent = formatExact(found.value);
+  commonNote.textContent = joinNote(found);
+}
+
+function joinNote(found: FirstCommonValue): string {
+  const value = found.value === null ? '1' : formatExact(found.value);
+  const latest = found.hits.reduce((best, hit) => (hit.index > best.index ? hit : best), found.hits[0]);
+  if (!latest || found.hits.length > 8) {
+    const count = formatCount(found.hits.length);
+    if (!latest) return `All ${count} sequences reach ${value}.`;
+    return `All ${count} sequences reach ${value}. The latest is ${formatExact(latest.seed)} at step ${formatCount(latest.index)}.`;
+  }
+  const parts = found.hits.map((hit) => `${formatExact(hit.seed)} at step ${formatCount(hit.index)}`);
+  const list =
+    parts.length <= 2
+      ? parts.join(' and ')
+      : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+  return `All ${formatCount(found.hits.length)} sequences reach ${value}. ${list}.`;
 }
 
 function renderLegend(series: Trajectory[] | null): void {
@@ -739,8 +849,11 @@ function renderLegend(series: Trajectory[] | null): void {
     } else if (trajectory.stoppedForSize) {
       state.textContent = 'Stopped: value too large';
       state.dataset.state = 'warn';
-    } else {
+    } else if (iterationLimitEnabled) {
       state.textContent = 'Stopped at the iteration cap';
+      state.dataset.state = 'warn';
+    } else {
+      state.textContent = 'Stopped at the emergency ceiling';
       state.dataset.state = 'warn';
     }
     body.append(title, meta, state);
@@ -822,7 +935,7 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
   tooltip.replaceChildren();
   const heading = document.createElement('p');
   heading.className = 'tip-step';
-  heading.textContent = hit.align ? 'Aligned progress' : `Iteration ${formatCount(hit.step)}`;
+  heading.textContent = `Iterations to 1 · ${formatCount(hit.step)}`;
   const list = document.createElement('ul');
   for (const entry of hit.entries) {
     const item = document.createElement('li');
@@ -834,7 +947,9 @@ function showTooltip(hit: HoverHit, clientX: number, clientY: number): void {
     seed.textContent = formatExact(entry.seed);
     const value = document.createElement('span');
     value.className = 'tip-value';
-    value.textContent = hit.align ? `${formatCount(entry.step)} · ${formatExact(entry.exact)}` : formatExact(entry.exact);
+    value.textContent = hit.align
+      ? `step ${formatCount(entry.step)} · ${formatExact(entry.exact)}`
+      : formatExact(entry.exact);
     if (entry.peak) {
       const tag = document.createElement('span');
       tag.className = 'tip-peak';

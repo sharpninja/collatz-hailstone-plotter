@@ -44,7 +44,7 @@ export interface PngFit {
   predict: (iteration: number) => number;
   start: number;
   end: number;
-  /** Peak Collatz value, used when the chart is in align / normalize mode. */
+  /** Kept for callers that already pass a peak. Align does not rescale height. */
   peak?: number;
 }
 
@@ -81,7 +81,7 @@ export function renderPng(
   context.fillStyle = muted;
   context.font = '15px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
   const axisNote = align
-    ? 'axes normalized to each path’s length and peak'
+    ? 'paths shifted so they all end at 1'
     : logY
       ? 'logarithmic value axis'
       : 'linear value axis';
@@ -93,7 +93,7 @@ export function renderPng(
     76,
   );
 
-  const legendWidth = trajectories.length > 1 ? 280 : 0;
+  const legendWidth = legendWidthFor(trajectories.length);
   const chartX = 24;
   const chartY = 104;
   const chartW = PAGE_W - chartX - 24 - (legendWidth ? legendWidth + 8 : 0);
@@ -111,26 +111,12 @@ export function renderPng(
   context.restore();
 
   if (legendWidth) {
-    const legendX = chartX + chartW + 20;
-    let legendY = chartY + 8;
-    context.font = '13px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
-    context.fillStyle = accent;
-    context.textAlign = 'left';
-    context.textBaseline = 'alphabetic';
-    context.fillText('Seeds', legendX, legendY + 12);
-    legendY += 26;
-    trajectories.forEach((trajectory, index) => {
-      const color = layout.series[index]?.color ?? accent;
-      context.fillStyle = color;
-      roundRect(context, legendX, legendY + 2, 18, 4, 2);
-      context.fill();
-      context.fillStyle = text;
-      context.font = '14px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
-      context.fillText(trimSeed(trajectory.seed), legendX, legendY + 22);
-      context.fillStyle = muted;
-      context.font = '12px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
-      context.fillText(outcome(trajectory), legendX, legendY + 40);
-      legendY += 54;
+    drawSeedLegend(context, trajectories, layout.series.map((series) => series.color), {
+      x: chartX + chartW + 20,
+      y: chartY + 8,
+      text,
+      muted,
+      accent,
     });
   } else if (trajectories[0]) {
     context.fillStyle = accent;
@@ -140,6 +126,95 @@ export function renderPng(
   }
 
   return canvas;
+}
+
+const COMPACT_ROW = 18;
+const COMPACT_COLUMN = 150;
+const LEGEND_HEADER = 26;
+
+function legendWidthFor(count: number): number {
+  if (count <= 1) return 0;
+  if (count <= 12) return 280;
+  return legendColumns(count) * COMPACT_COLUMN + 12;
+}
+
+/** Rows that fit under the chart title in a compact legend column. */
+function compactRowsPerColumn(): number {
+  const top = 104 + 8;
+  const available = PAGE_H - 16 - top - LEGEND_HEADER;
+  return Math.max(1, Math.floor(available / COMPACT_ROW));
+}
+
+function legendColumns(count: number): number {
+  const perColumn = compactRowsPerColumn();
+  return Math.min(4, Math.max(1, Math.ceil(count / perColumn)));
+}
+
+function drawSeedLegend(
+  context: CanvasRenderingContext2D,
+  trajectories: Trajectory[],
+  colors: string[],
+  box: { x: number; y: number; text: string; muted: string; accent: string },
+): void {
+  context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
+  context.font = '13px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
+  context.fillStyle = box.accent;
+  context.fillText('Seeds', box.x, box.y + 12);
+  const originY = box.y + LEGEND_HEADER;
+
+  if (trajectories.length <= 12) {
+    trajectories.forEach((trajectory, index) => {
+      const y = originY + index * 54;
+      paintSwatch(context, colors[index] ?? box.accent, box.x, y + 2, 18, 4);
+      context.fillStyle = box.text;
+      context.font = '14px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
+      context.fillText(trimSeed(trajectory.seed), box.x, y + 22);
+      context.fillStyle = box.muted;
+      context.font = '12px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
+      context.fillText(outcome(trajectory), box.x, y + 40);
+    });
+    return;
+  }
+
+  const perColumn = compactRowsPerColumn();
+  const columns = legendColumns(trajectories.length);
+  const capacity = columns * perColumn;
+  const truncated = trajectories.length > capacity;
+  const shown = truncated ? capacity - 1 : trajectories.length;
+  for (let index = 0; index < shown; index++) {
+    const column = Math.floor(index / perColumn);
+    const row = index % perColumn;
+    const x = box.x + column * COMPACT_COLUMN;
+    const y = originY + row * COMPACT_ROW;
+    paintSwatch(context, colors[index] ?? box.accent, x, y + 4, 12, 3);
+    context.fillStyle = box.text;
+    context.font = '12px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
+    context.fillText(trimSeed(trajectories[index].seed), x + 18, y + 12);
+  }
+  if (truncated) {
+    const index = shown;
+    const column = Math.floor(index / perColumn);
+    const row = index % perColumn;
+    const x = box.x + column * COMPACT_COLUMN;
+    const y = originY + row * COMPACT_ROW;
+    context.fillStyle = box.muted;
+    context.font = '12px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
+    context.fillText(`+ ${formatCount(trajectories.length - shown)} more`, x, y + 12);
+  }
+}
+
+function paintSwatch(
+  context: CanvasRenderingContext2D,
+  color: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  context.fillStyle = color;
+  roundRect(context, x, y, w, h, 2);
+  context.fill();
 }
 
 function trimSeed(seed: bigint): string {
