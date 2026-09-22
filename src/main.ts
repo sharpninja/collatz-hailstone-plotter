@@ -230,9 +230,12 @@ function showStatus(): void {
   const hint = scaleHint(trajectories, logInput.checked, alignInput.checked);
   if (hint) parts.push({ kind: 'warn', text: hint });
   if (alignInput.checked && trajectories.length > 1) {
+    const height = logInput.checked
+      ? 'height is the log of its value divided by the log of its peak'
+      : 'height is its value divided by its peak';
     parts.push({
       kind: 'warn',
-      text: 'Align is on: horizontal position is each path’s progress, and height is its value divided by its peak.',
+      text: `Align is on: horizontal position is each path’s progress, and ${height}.`,
     });
   }
   setMessage(parts);
