@@ -208,6 +208,65 @@ export function alignedStep(step: number, steps: number, maxStep: number): numbe
   return maxStep - steps + step;
 }
 
+/** Inclusive interval on the shared horizontal axis (iterations to 1). */
+export interface AxisRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * Hailstone indexes whose plotted x lies inside `range`, inclusive.
+ * Align off: axis x is the step index. Align on: step k of a path that
+ * takes `pathSteps` to its end is drawn at `maxStep - pathSteps + k`.
+ */
+export function stepsInAxisRange(
+  pathSteps: number,
+  maxStep: number,
+  align: boolean,
+  range: AxisRange,
+): { from: number; to: number } | null {
+  const lo = Math.min(range.start, range.end);
+  const hi = Math.max(range.start, range.end);
+  const offset = align ? maxStep - pathSteps : 0;
+  const from = Math.max(0, Math.ceil(lo - offset));
+  const to = Math.min(pathSteps, Math.floor(hi - offset));
+  if (from > to || to < 0 || from > pathSteps) return null;
+  return { from, to };
+}
+
+export function pointInPlot(layout: Layout, x: number, y: number): boolean {
+  const { plot } = layout;
+  return x >= plot.x && x <= plot.x + plot.w && y >= plot.y && y <= plot.y + plot.h;
+}
+
+/** Snap a pixel x to an integer axis step, clamped to the plotted data domain. */
+export function svgXToAxis(layout: Layout, x: number): number {
+  const { plot, xMax, maxStep } = layout;
+  const clamped = Math.min(plot.x + plot.w, Math.max(plot.x, x));
+  if (xMax <= 0 || plot.w <= 0) return 0;
+  let axis = Math.round(((clamped - plot.x) / plot.w) * xMax);
+  if (axis < 0) axis = 0;
+  if (axis > maxStep) axis = maxStep;
+  return axis;
+}
+
+/** Pixel rect for an inclusive axis span, padded by half a step and clipped to the plot. */
+export function selectionBandRect(
+  layout: Layout,
+  range: AxisRange,
+): { x: number; y: number; width: number; height: number } {
+  const lo = Math.min(range.start, range.end);
+  const hi = Math.max(range.start, range.end);
+  const { plot, xMax } = layout;
+  const span = Math.max(xMax, 1);
+  const gap = plot.w / span;
+  const left = plot.x + (lo / span) * plot.w - gap / 2;
+  const right = plot.x + (hi / span) * plot.w + gap / 2;
+  const x = Math.max(plot.x, left);
+  const rightEdge = Math.min(plot.x + plot.w, right);
+  return { x, y: plot.y, width: Math.max(0, rightEdge - x), height: plot.h };
+}
+
 export function buildLayout(
   trajectories: Trajectory[],
   options: { width: number; height: number; logY: boolean; align?: boolean },
@@ -417,6 +476,38 @@ export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
   return { step: axis, x: sampleX, align: layout.align, entries };
 }
 
+export interface BeatHit {
+  exact: bigint;
+  seed: bigint;
+  x: number;
+  y: number;
+  step: number;
+  distance: number;
+}
+
+/** Nearest odd-exponent prime-power ring inside `radius` (SVG pixels). */
+export function nearestBeat(layout: Layout, x: number, y: number, radius: number): BeatHit | null {
+  if (radius < 0) return null;
+  let best: BeatHit | null = null;
+  for (const series of layout.series) {
+    for (const sample of series.samples) {
+      if (!sample.beat) continue;
+      const distance = Math.hypot(sample.x - x, sample.y - y);
+      if (distance > radius) continue;
+      if (best && distance >= best.distance) continue;
+      best = {
+        exact: sample.exact,
+        seed: series.seed,
+        x: sample.x,
+        y: sample.y,
+        step: sample.step,
+        distance,
+      };
+    }
+  }
+  return best;
+}
+
 export function seriesPath(series: LayoutSeries): string {
   const first = series.samples[0];
   if (!first) return '';
@@ -441,6 +532,7 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
 export interface ChartView {
   svg: SVGSVGElement;
   hoverLayer: SVGGElement;
+  selectionLayer: SVGGElement;
   layout: Layout;
 }
 
@@ -558,6 +650,9 @@ export function renderChart(
   }
   svg.append(grid);
 
+  const selectionLayer = svgEl('g', { class: 'selection-layer', 'clip-path': 'url(#series-clip)' });
+  svg.append(selectionLayer);
+
   const axes = svgEl('g', { class: 'axes' });
   for (const tick of layout.yTicks) {
     if (!tick.label) continue;
@@ -663,7 +758,24 @@ export function renderChart(
   const hoverLayer = svgEl('g', { class: 'hover-layer' });
   svg.append(hoverLayer);
   host.append(svg);
-  return { svg, hoverLayer, layout };
+  return { svg, hoverLayer, selectionLayer, layout };
+}
+
+/** Draw or clear the translucent playback band. Safe to call on every drag move. */
+export function paintSelection(layer: SVGGElement, layout: Layout, range: AxisRange | null): void {
+  layer.replaceChildren();
+  if (!range) return;
+  const band = selectionBandRect(layout, range);
+  if (band.width <= 0) return;
+  layer.append(
+    svgEl('rect', {
+      x: String(band.x),
+      y: String(band.y),
+      width: String(band.width),
+      height: String(band.height),
+      class: 'selection-band',
+    }),
+  );
 }
 
 export function renderHover(layer: SVGGElement, layout: Layout, hit: HoverHit | null): void {

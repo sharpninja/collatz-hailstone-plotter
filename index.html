@@ -94,7 +94,7 @@
               <input id="mark-beats" type="checkbox" checked />
               <span>Mark beats</span>
             </label>
-            <p class="hint">Rings mark terms that are prime powers with an odd exponent. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
+            <p class="hint">Rings mark terms that are prime powers with an odd exponent. Click a ring to copy that value. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
 
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
@@ -146,6 +146,7 @@
               </div>
               <div id="plot-host" class="plot-host"></div>
               <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
+              <p id="copy-toast" class="copy-toast" role="status" hidden></p>
             </div>
             <div class="player" id="player">
               <div class="player-row">
@@ -159,16 +160,26 @@
                   <input id="hand-right" type="checkbox" checked />
                   <span>Right hand</span>
                 </label>
+                <label class="player-field instrument" for="instrument-right">Right hand instrument
+                  <select id="instrument-right"></select>
+                </label>
                 <label class="check" for="hand-left">
                   <input id="hand-left" type="checkbox" checked />
                   <span>Left hand</span>
+                </label>
+                <label class="player-field instrument" for="instrument-left">Left hand instrument
+                  <select id="instrument-left"></select>
                 </label>
                 <label class="player-field" for="play-seed">Hearing
                   <select id="play-seed"></select>
                 </label>
               </div>
+              <div class="player-range">
+                <p id="playback-range" class="hint">Playback: full path</p>
+                <button type="button" id="clear-selection" disabled>Clear selection</button>
+              </div>
               <div class="meter" aria-hidden="true"><span id="level"></span></div>
-              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward. Each climb swells and each partial descent eases before the next swell. The line rests only on the final powers of 2. Original figures, exploratory, not a proof.</p>
+              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward. Each hand has its own instrument, and both start as piano. The line rests only on the final powers of 2. Original figures, exploratory, not a proof.</p>
             </div>
             <p id="plot-note" class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
           </div>

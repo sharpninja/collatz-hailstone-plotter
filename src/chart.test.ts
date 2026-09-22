@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
+import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, nearestBeat, selectionBandRect, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -259,6 +259,67 @@ describe('buildLayout', () => {
     const start47 = hitTest(layout, path47.samples[0].x, path47.samples[0].y);
     expect(start47?.entries.map((entry) => entry.seed)).toEqual([27n, 47n]);
     expect(start47?.entries.map((entry) => entry.step)).toEqual([7, 0]);
+  });
+
+  it('maps a playback range to hailstone steps with align on and off', () => {
+    expect(stepsInAxisRange(111, 111, false, { start: 40, end: 90 })).toEqual({ from: 40, to: 90 });
+    expect(stepsInAxisRange(111, 111, false, { start: 90, end: 40 })).toEqual({ from: 40, to: 90 });
+    expect(stepsInAxisRange(111, 111, false, { start: 200, end: 210 })).toBeNull();
+    expect(stepsInAxisRange(20, 111, false, { start: 40, end: 90 })).toBeNull();
+
+    expect(stepsInAxisRange(104, 111, true, { start: 7, end: 7 })).toEqual({ from: 0, to: 0 });
+    expect(stepsInAxisRange(104, 111, true, { start: 40, end: 90 })).toEqual({ from: 33, to: 83 });
+    expect(stepsInAxisRange(104, 111, true, { start: 0, end: 6 })).toBeNull();
+    expect(stepsInAxisRange(111, 111, true, { start: 40, end: 90 })).toEqual({ from: 40, to: 90 });
+
+    const longer = hailstone(27n, 10_000);
+    const shorter = hailstone(47n, 10_000);
+    const layout = buildLayout([longer, shorter], { width: 800, height: 480, logY: false, align: true });
+    expect(svgXToAxis(layout, layout.series[1].samples[0].x)).toBe(7);
+    expect(svgXToAxis(layout, layout.series[0].samples[40].x)).toBe(40);
+    const off = buildLayout([longer], { width: 800, height: 480, logY: false, align: false });
+    expect(svgXToAxis(off, off.series[0].samples[90].x)).toBe(90);
+    const band = selectionBandRect(off, { start: 40, end: 90 });
+    const gap = off.plot.w / off.xMax;
+    const x40 = off.plot.x + (40 / off.xMax) * off.plot.w;
+    const x90 = off.plot.x + (90 / off.xMax) * off.plot.w;
+    expect(band.x).toBeCloseTo(x40 - gap / 2);
+    expect(band.x + band.width).toBeCloseTo(x90 + gap / 2);
+    expect(band.y).toBe(off.plot.y);
+    expect(band.height).toBe(off.plot.h);
+  });
+
+  it('picks the nearest beat value in plot pixels, on either scale', () => {
+    const linear = buildLayout([hailstone(27n, 10_000)], { width: 800, height: 480, logY: false });
+    const start = linear.series[0].samples[0];
+    expect(start.exact).toBe(27n);
+    expect(start.beat).toBe(true);
+    expect(nearestBeat(linear, start.x, start.y, 12)?.exact).toBe(27n);
+    expect(nearestBeat(linear, start.x + 40, start.y + 40, 8)).toBeNull();
+    const plain = linear.series[0].samples.find((sample) => !sample.beat);
+    expect(plain).toBeDefined();
+    expect(nearestBeat(linear, plain!.x, plain!.y, 0.4)).toBeNull();
+
+    const logged = buildLayout([hailstone(27n, 10_000)], { width: 800, height: 480, logY: true });
+    const logStart = logged.series[0].samples[0];
+    expect(logStart.y).not.toBeCloseTo(start.y);
+    expect(nearestBeat(logged, logStart.x, logStart.y, 12)?.exact).toBe(27n);
+
+    const aligned = buildLayout([hailstone(27n, 10_000), hailstone(47n, 10_000)], {
+      width: 800,
+      height: 480,
+      logY: false,
+      align: true,
+    });
+    const at47 = aligned.series[1].samples[0];
+    const beside = aligned.series[0].samples[7];
+    expect(at47.exact).toBe(47n);
+    expect(at47.beat).toBe(true);
+    expect(at47.x).toBeCloseTo(beside.x);
+    expect(nearestBeat(aligned, at47.x, at47.y, 24)?.exact).toBe(47n);
+    const betweenY = (at47.y + beside.y) / 2;
+    const toward47 = at47.y + (betweenY - at47.y) * 0.25;
+    expect(nearestBeat(aligned, at47.x, toward47, 80)?.exact).toBe(at47.exact);
   });
 
   it('plots a single point at 1 without a curve', () => {
