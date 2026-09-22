@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLayout, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
+import { buildFitPolylines, buildLayout, dataToSvg, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -151,6 +151,30 @@ describe('buildLayout', () => {
     expect(hit?.entries[0]?.exact).toBe(9232n);
     expect(hit?.entries[0]?.peak).toBe(true);
     expect(hitTest(layout, 0, 0)).toBeNull();
+  });
+
+  it('maps data coordinates onto the samples', () => {
+    for (const logY of [false, true]) {
+      const layout = buildLayout([hailstone(27n, 10_000)], { width: 960, height: 600, logY });
+      for (const sample of layout.series[0].samples) {
+        const point = dataToSvg(layout, sample.step, sample.value);
+        expect(point.x).toBeCloseTo(sample.x);
+        expect(point.y).toBeCloseTo(sample.y);
+      }
+    }
+  });
+
+  it('samples a fitted curve across the plotted domain', () => {
+    const layout = buildLayout([hailstone(27n, 10_000)], { width: 960, height: 600, logY: false });
+    const [line] = buildFitPolylines(layout, [
+      { color: '#f4efe6', predict: () => 100, start: 0, end: layout.series[0].steps },
+    ]);
+    const drawn = line.points.filter((point): point is { x: number; y: number } => point !== null);
+    expect(drawn.length).toBeGreaterThan(20);
+    expect(drawn[0].x).toBeCloseTo(dataToSvg(layout, 0, 100).x);
+    expect(drawn[0].y).toBeCloseTo(dataToSvg(layout, 0, 100).y);
+    const last = drawn.at(-1)!;
+    expect(last.x).toBeCloseTo(dataToSvg(layout, layout.series[0].steps, 100).x);
   });
 
   it('plots a single point at 1 without a curve', () => {
