@@ -73,11 +73,20 @@
 
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
+              <button type="button" id="fit" disabled>Identify function</button>
               <button type="button" id="download" disabled>Download PNG</button>
               <button type="button" id="clear">Clear</button>
             </div>
             <div id="form-message" class="message" aria-live="polite"></div>
           </form>
+
+          <section id="fit-block" class="fit-block" hidden aria-labelledby="fit-heading">
+            <h2 id="fit-heading">Function of N</h2>
+            <p class="hint">
+              Each path has an exact form in its starting value N, fixed by the parity pattern that run actually took: every term is (3^o · N + m) / 2^e. The pattern depends on N, so this is exact for these seeds and is not a proof for every starting value. The dashed curve is only a visual fit of the plotted samples.
+            </p>
+            <div id="fit-results" class="fit-results" aria-live="polite"></div>
+          </section>
 
           <section class="legend-block" aria-labelledby="legend-heading">
             <h2 id="legend-heading">Trajectories</h2>
@@ -101,7 +110,7 @@
               <div id="plot-host" class="plot-host"></div>
               <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
             </div>
-            <p class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
+            <p id="plot-note" class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
           </div>
         </section>
       </div>

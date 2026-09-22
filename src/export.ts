@@ -1,5 +1,5 @@
 import { peakValue, type Trajectory } from './collatz';
-import { buildLayout, paintChart, type ChartPalette } from './chart';
+import { buildFitPolylines, buildLayout, paintChart, type ChartPalette, type FitPolyline } from './chart';
 import { formatCount, formatExact } from './format';
 
 const PAGE_W = 1440;
@@ -27,6 +27,7 @@ function palette(): ChartPalette {
     tick: cssColor('--muted', '#b3aa9c'),
     label: cssColor('--text', '#f4efe6'),
     frame: 'rgba(244, 239, 230, 0.28)',
+    plot: cssColor('--bg-raised', '#171512'),
   };
 }
 
@@ -38,7 +39,14 @@ function outcome(trajectory: Trajectory): string {
   return `capped at ${steps} · peak ${peak}`;
 }
 
-export function renderPng(trajectories: Trajectory[], logY: boolean): HTMLCanvasElement {
+export interface PngFit {
+  color: string;
+  predict: (iteration: number) => number;
+  start: number;
+  end: number;
+}
+
+export function renderPng(trajectories: Trajectory[], logY: boolean, fits: PngFit[] = []): HTMLCanvasElement {
   const scale = 2;
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_W * scale;
@@ -65,7 +73,12 @@ export function renderPng(trajectories: Trajectory[], logY: boolean): HTMLCanvas
   context.fillStyle = muted;
   context.font = '15px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
   const axisNote = logY ? 'logarithmic value axis' : 'linear value axis';
-  context.fillText(`Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.`, 40, 76);
+  const fitNote = fits.length > 0 ? ' Dashed curve: visual fit of the samples.' : '';
+  context.fillText(
+    `Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.${fitNote}`,
+    40,
+    76,
+  );
 
   const legendWidth = trajectories.length > 1 ? 280 : 0;
   const chartX = 24;
@@ -78,9 +91,10 @@ export function renderPng(trajectories: Trajectory[], logY: boolean): HTMLCanvas
   context.fill();
 
   const layout = buildLayout(trajectories, { width: chartW, height: chartH, logY });
+  const overlays: FitPolyline[] = buildFitPolylines(layout, fits);
   context.save();
   context.translate(chartX, chartY);
-  paintChart(context, layout, palette());
+  paintChart(context, layout, palette(), overlays);
   context.restore();
 
   if (legendWidth) {
@@ -139,8 +153,8 @@ function roundRect(
   ctx.closePath();
 }
 
-export function downloadPng(trajectories: Trajectory[], logY: boolean): void {
-  const canvas = renderPng(trajectories, logY);
+export function downloadPng(trajectories: Trajectory[], logY: boolean, fits: PngFit[] = []): void {
+  const canvas = renderPng(trajectories, logY, fits);
   canvas.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

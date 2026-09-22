@@ -85,6 +85,8 @@ export interface ChartPalette {
   tick: string;
   label: string;
   frame: string;
+  /** Chart background, used to cut a halo under a dashed fit. */
+  plot: string;
 }
 
 interface Padding {
@@ -413,19 +415,62 @@ export interface ChartView {
   layout: Layout;
 }
 
-export function renderChart(host: HTMLElement, layout: Layout, summary: string): ChartView {
+export interface FitPolyline {
+  color: string;
+  /** Null entries break the stroke, so a non-positive log prediction does not jump. */
+  points: Array<{ x: number; y: number } | null>;
+}
+
+/** Map an iteration and Collatz value into the same pixel space as the samples. */
+export function dataToSvg(layout: Layout, step: number, value: number): { x: number; y: number } {
+  const { plot, xMax, yMax, logY } = layout;
+  const x = plot.x + (step / xMax) * plot.w;
+  const safe = Math.max(value, logY ? 1 : 0);
+  const t = logY ? Math.log10(safe) / Math.log10(yMax) : safe / yMax;
+  return { x, y: plot.y + plot.h - t * plot.h };
+}
+
+/** Sample a fitted value function densely enough to read as a smooth dashed curve. */
+export function buildFitPolylines(
+  layout: Layout,
+  fits: Array<{ color: string; predict: (iteration: number) => number; start: number; end: number }>,
+): FitPolyline[] {
+  return fits.map((fit) => {
+    const span = Math.max(0, fit.end - fit.start);
+    const count = span <= 240 ? Math.max(2, Math.ceil(span * 2)) : 480;
+    const points: FitPolyline['points'] = [];
+    for (let index = 0; index <= count; index++) {
+      const iteration = fit.start + (span * index) / count;
+      const value = fit.predict(iteration);
+      if (!Number.isFinite(value) || (layout.logY && value <= 0)) {
+        points.push(null);
+        continue;
+      }
+      points.push(dataToSvg(layout, iteration, value));
+    }
+    return { color: fit.color, points };
+  });
+}
+
+export function renderChart(
+  host: HTMLElement,
+  layout: Layout,
+  summary: string,
+  fits: FitPolyline[] = [],
+): ChartView {
   host.replaceChildren();
+  const label = fits.length > 0 ? `${summary} A dashed curve shows a least-squares fit.` : summary;
   const svg = svgEl('svg', {
     viewBox: `0 0 ${layout.width} ${layout.height}`,
     width: String(layout.width),
     height: String(layout.height),
     role: 'img',
-    'aria-label': summary,
+    'aria-label': label,
   });
   svg.classList.add('chart');
 
   const desc = svgEl('desc', {});
-  desc.textContent = summary;
+  desc.textContent = label;
   svg.append(desc);
 
   const defs = svgEl('defs', {});
@@ -544,6 +589,7 @@ export function renderChart(host: HTMLElement, layout: Layout, summary: string):
     curveLayer.append(group);
   }
   svg.append(curveLayer);
+  if (fits.length > 0) svg.append(fitLayer(fits));
 
   const markers = svgEl('g', { class: 'markers' });
   for (const series of layout.series) {
@@ -594,7 +640,12 @@ export function renderHover(layer: SVGGElement, layout: Layout, hit: HoverHit | 
   }
 }
 
-export function paintChart(ctx: CanvasRenderingContext2D, layout: Layout, palette: ChartPalette): void {
+export function paintChart(
+  ctx: CanvasRenderingContext2D,
+  layout: Layout,
+  palette: ChartPalette,
+  fits: FitPolyline[] = [],
+): void {
   const { plot } = layout;
   ctx.save();
   ctx.beginPath();
@@ -671,6 +722,7 @@ export function paintChart(ctx: CanvasRenderingContext2D, layout: Layout, palett
     ctx.lineWidth = 2.25;
     ctx.stroke();
   }
+  paintFits(ctx, fits, palette.plot);
   ctx.restore();
 
   for (const series of layout.series) {
@@ -683,6 +735,76 @@ export function paintChart(ctx: CanvasRenderingContext2D, layout: Layout, palett
     }
   }
   ctx.restore();
+}
+
+function fitLayer(fits: FitPolyline[]): SVGGElement {
+  const layer = svgEl('g', { class: 'fit-layer', 'clip-path': 'url(#series-clip)' });
+  for (const fit of fits) {
+    const path = polylinePath(fit.points);
+    if (!path) continue;
+    layer.append(
+      svgEl('path', { d: path, class: 'fit-halo' }),
+      svgEl('path', { d: path, class: 'fit-line', stroke: fit.color }),
+      svgEl('path', { d: path, class: 'fit-stitch' }),
+    );
+  }
+  return layer;
+}
+
+function polylinePath(points: Array<{ x: number; y: number } | null>): string {
+  let path = '';
+  let open = false;
+  for (const point of points) {
+    if (!point) {
+      open = false;
+      continue;
+    }
+    path += `${open ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)} `;
+    open = true;
+  }
+  return path.trim();
+}
+
+function paintFits(ctx: CanvasRenderingContext2D, fits: FitPolyline[], halo: string): void {
+  if (fits.length === 0) return;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const fit of fits) {
+    tracePolyline(ctx, fit.points);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = halo;
+    ctx.lineWidth = 6.5;
+    ctx.stroke();
+    tracePolyline(ctx, fit.points);
+    ctx.setLineDash([7, 7]);
+    ctx.lineDashOffset = 0;
+    ctx.strokeStyle = fit.color;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    ctx.lineDashOffset = 7;
+    ctx.strokeStyle = '#f4efe6';
+    ctx.stroke();
+    ctx.lineDashOffset = 0;
+  }
+  ctx.restore();
+}
+
+function tracePolyline(ctx: CanvasRenderingContext2D, points: Array<{ x: number; y: number } | null>): void {
+  ctx.beginPath();
+  let open = false;
+  for (const point of points) {
+    if (!point) {
+      open = false;
+      continue;
+    }
+    if (!open) {
+      ctx.moveTo(point.x, point.y);
+      open = true;
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
+  }
 }
 
 function strokeGrid(
