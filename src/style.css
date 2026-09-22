@@ -201,7 +201,8 @@ textarea { resize: vertical; min-height: 76px; }
 
 .actions button:not(.primary) { flex: 1; }
 
-button:disabled {
+button:disabled,
+input:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

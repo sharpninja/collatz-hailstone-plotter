@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstCommonValue, hailstone, peakValue, type Trajectory } from './collatz';
+import { EMERGENCY_ITERATION_CAP, firstCommonValue, hailstone, peakValue, type Trajectory } from './collatz';
 import { MAX_SEEDS, MAX_SEEDS_LIMIT, isOddPrimePower, parseMaxIterations, parseMaxSeeds, parseSeeds } from './parse';
 
 describe('hailstone', () => {
@@ -39,6 +39,14 @@ describe('hailstone', () => {
     expect(trajectory.reachedOne).toBe(false);
     expect(trajectory.stoppedForSize).toBe(false);
     expect(trajectory.values).toHaveLength(11);
+  });
+
+  it('reaches 1 for 27 under the emergency ceiling', () => {
+    expect(EMERGENCY_ITERATION_CAP).toBe(10_000_000);
+    const trajectory = hailstone(27n, EMERGENCY_ITERATION_CAP);
+    expect(trajectory.reachedOne).toBe(true);
+    expect(trajectory.stoppedForSize).toBe(false);
+    expect(trajectory.values).toHaveLength(112);
   });
 
   it('stops before a term overflows the chart', () => {

@@ -1,4 +1,12 @@
-import { exceedsSafeInteger, firstCommonValue, hailstone, peakValue, type FirstCommonValue, type Trajectory } from './collatz';
+import {
+  EMERGENCY_ITERATION_CAP,
+  exceedsSafeInteger,
+  firstCommonValue,
+  hailstone,
+  peakValue,
+  type FirstCommonValue,
+  type Trajectory,
+} from './collatz';
 import {
   SERIES_COLORS,
   buildFitPolylines,
@@ -28,6 +36,7 @@ import {
 
 const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
+const limitIterationsInput = required<HTMLInputElement>('limit-iterations');
 const maxSeedsInput = required<HTMLInputElement>('max-seeds');
 const logInput = required<HTMLInputElement>('log-scale');
 const alignInput = required<HTMLInputElement>('align-plots');
@@ -91,6 +100,8 @@ interface FitOutcome {
 let trajectories: Trajectory[] | null = null;
 let lastParsed: ParsedSeeds | null = null;
 let seedCap = MAX_SEEDS;
+/** True when the plot on screen was drawn with the user iteration cap. */
+let iterationLimitEnabled = true;
 let fits: FitOutcome[] | null = null;
 let view: ChartView | null = null;
 let renderFrame = 0;
@@ -163,13 +174,18 @@ playSeedSelect.addEventListener('change', () => {
   syncTransport();
 });
 
+limitIterationsInput.addEventListener('change', syncIterationLimitField);
+
 clearButton.addEventListener('click', () => {
   player.stop();
   levelBar.style.width = '0';
   seedsInput.value = '';
   maxInput.value = '10000';
+  limitIterationsInput.checked = true;
+  syncIterationLimitField();
   maxSeedsInput.value = String(MAX_SEEDS);
   seedCap = MAX_SEEDS;
+  iterationLimitEnabled = true;
   logInput.checked = false;
   alignInput.checked = false;
   trajectories = null;
@@ -222,7 +238,12 @@ plotHost.addEventListener('pointerleave', () => {
 const observer = new ResizeObserver(() => scheduleRender());
 observer.observe(plotHost);
 
+syncIterationLimitField();
 generate();
+
+function syncIterationLimitField(): void {
+  maxInput.disabled = !limitIterationsInput.checked;
+}
 
 function generate(): void {
   const maxSeeds = parseMaxSeeds(maxSeedsInput.value);
@@ -296,7 +317,9 @@ function generate(): void {
     setMessage([{ kind: 'error', text: lead }, ...warningParts(parsed, [])]);
     return;
   }
-  if (maxIterations === null) {
+  const limitIterations = limitIterationsInput.checked;
+  const iterationCap = limitIterations ? maxIterations : EMERGENCY_ITERATION_CAP;
+  if (limitIterations && iterationCap === null) {
     setMessage([
       {
         kind: 'error',
@@ -305,7 +328,7 @@ function generate(): void {
     ]);
     return;
   }
-  if (parsed.seeds.length * maxIterations > TOTAL_STEP_BUDGET) {
+  if (limitIterations && iterationCap !== null && parsed.seeds.length * iterationCap > TOTAL_STEP_BUDGET) {
     setMessage([
       {
         kind: 'error',
@@ -318,7 +341,8 @@ function generate(): void {
   player.stop();
   levelBar.style.width = '0';
   lastParsed = parsed;
-  trajectories = parsed.seeds.map((seed) => hailstone(seed, maxIterations));
+  iterationLimitEnabled = limitIterations;
+  trajectories = parsed.seeds.map((seed) => hailstone(seed, iterationCap ?? EMERGENCY_ITERATION_CAP));
   downloadButton.disabled = false;
   fitButton.disabled = false;
   resetFit();
@@ -719,7 +743,10 @@ function warningParts(
   const capped = series.filter((trajectory) => !trajectory.reachedOne && !trajectory.stoppedForSize);
   if (capped.length > 0) {
     const names = capped.map((trajectory) => formatExact(trajectory.seed)).join(', ');
-    parts.push({ kind: 'warn', text: `${names} hit the iteration cap before reaching 1.` });
+    const reason = iterationLimitEnabled
+      ? 'hit the iteration cap before reaching 1.'
+      : `hit the emergency ceiling of ${formatCount(EMERGENCY_ITERATION_CAP)} steps before reaching 1.`;
+    parts.push({ kind: 'warn', text: `${names} ${reason}` });
   }
   const oversized = series.filter((trajectory) => trajectory.stoppedForSize);
   if (oversized.length > 0) {
@@ -743,6 +770,9 @@ function statusLine(series: Trajectory[]): string {
     const seed = formatExact(trajectory.seed);
     if (trajectory.reachedOne) return `Plotted ${seed}. Reached 1 in ${steps} steps; peak ${peak}.`;
     if (trajectory.stoppedForSize) return `Plotted ${seed}. Stopped when values outgrew the chart; peak ${peak}.`;
+    if (!iterationLimitEnabled) {
+      return `Plotted ${seed}. Stopped at the emergency ceiling of ${formatCount(EMERGENCY_ITERATION_CAP)} steps without reaching 1; peak ${peak}.`;
+    }
     return `Plotted ${seed}. Stopped at the cap after ${steps} steps without reaching 1; peak ${peak}.`;
   }
   const reached = series.filter((trajectory) => trajectory.reachedOne).length;
@@ -760,7 +790,9 @@ function renderCommon(series: Trajectory[] | null): void {
   commonBlock.hidden = false;
   if (found.none) {
     commonValue.textContent = 'No shared value';
-    commonNote.textContent = 'These runs do not share a term. A higher iteration cap can let them meet.';
+    commonNote.textContent = iterationLimitEnabled
+      ? 'These runs do not share a term. Raise the iteration cap, or turn the limit off, and they may meet.'
+      : 'These runs do not share a term before the emergency ceiling.';
     return;
   }
   if (found.onlyAtOne || found.value === null) {
@@ -820,8 +852,11 @@ function renderLegend(series: Trajectory[] | null): void {
     } else if (trajectory.stoppedForSize) {
       state.textContent = 'Stopped: value too large';
       state.dataset.state = 'warn';
-    } else {
+    } else if (iterationLimitEnabled) {
       state.textContent = 'Stopped at the iteration cap';
+      state.dataset.state = 'warn';
+    } else {
+      state.textContent = 'Stopped at the emergency ceiling';
       state.dataset.state = 'warn';
     }
     body.append(title, meta, state);

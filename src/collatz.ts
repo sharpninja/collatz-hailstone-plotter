@@ -1,6 +1,12 @@
 /** Largest value that still converts to a finite JavaScript number. */
 const MAX_PLOT_VALUE = 10n ** 308n;
 
+/**
+ * Hard stop used when the iteration limit is turned off.
+ * Stops a runaway sequence if a seed never reaches 1. Not a user setting.
+ */
+export const EMERGENCY_ITERATION_CAP = 10_000_000;
+
 export interface Trajectory {
   seed: bigint;
   /** Terms from the seed through the stopping value, inclusive. */
