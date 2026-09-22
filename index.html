@@ -49,14 +49,15 @@
                 rows="3"
                 spellcheck="false"
                 autocapitalize="off"
-                placeholder="e.g. 27 or 20..27"
+                placeholder="e.g. 27, 20..27, or primes:20..30"
               >27</textarea>
-              <p class="hint">Positive integers, separated by commas or spaces. Ranges like 20..27 include both ends. Up to 12 seeds.</p>
+              <p class="hint">Positive integers, commas, or spaces. 20..27 includes every integer. primes:20..30 keeps only the primes, both ends included. Up to 12 seeds.</p>
             </div>
 
             <div class="examples" role="group" aria-label="Examples">
               <button type="button" data-example="27" data-log="off">27</button>
               <button type="button" data-example="20..27" data-log="on">20..27</button>
+              <button type="button" data-example="primes:20..50" data-log="on">primes:20..50</button>
               <button type="button" data-example="25, 26, 27" data-log="on">25, 26, 27</button>
               <button type="button" data-example="12, 19, 27" data-log="on">12, 19, 27</button>
             </div>

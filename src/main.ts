@@ -160,6 +160,33 @@ generate();
 function generate(): void {
   const parsed = parseSeeds(seedsInput.value);
   const maxIterations = parseMaxIterations(maxInput.value);
+  if (parsed.emptyPrimes.length > 0) {
+    abandonPlot();
+    setMessage([
+      { kind: 'error', text: emptyPrimesMessage(parsed.emptyPrimes) },
+      ...warningParts(parsed, []),
+    ]);
+    return;
+  }
+  if (parsed.tooWide.length > 0) {
+    abandonPlot();
+    setMessage([
+      { kind: 'error', text: tooWideMessage(parsed.tooWide) },
+      ...warningParts(parsed, []),
+    ]);
+    return;
+  }
+  if (parsed.overCap) {
+    abandonPlot();
+    setMessage([
+      {
+        kind: 'error',
+        text: `That includes more than ${MAX_SEEDS} seeds. At most ${MAX_SEEDS} can be plotted.`,
+      },
+      ...warningParts(parsed, []),
+    ]);
+    return;
+  }
   if (parsed.overflow !== null) {
     abandonPlot();
     setMessage([
@@ -431,6 +458,17 @@ function seriesKey(series: Trajectory[]): string {
   return series
     .map((trajectory) => `${trajectory.seed}:${trajectory.values.length}:${trajectory.reachedOne}`)
     .join(',');
+}
+
+function emptyPrimesMessage(ranges: string[]): string {
+  if (ranges.length === 1) return `No primes in ${ranges[0]}.`;
+  if (ranges.length === 2) return `No primes in ${ranges[0]} or ${ranges[1]}.`;
+  return `No primes in ${ranges.slice(0, -1).join(', ')}, or ${ranges[ranges.length - 1]}.`;
+}
+
+function tooWideMessage(ranges: string[]): string {
+  if (ranges.length === 1) return `The prime range ${ranges[0]} is too wide to expand. Shorten it.`;
+  return 'Those prime ranges are too wide to expand. Shorten them.';
 }
 
 function warningParts(
