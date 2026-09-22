@@ -1,6 +1,7 @@
 import { exceedsSafeInteger, hailstone, peakValue, type Trajectory } from './collatz';
 import {
   SERIES_COLORS,
+  buildFitPolylines,
   buildLayout,
   hitTest,
   renderChart,
@@ -8,7 +9,8 @@ import {
   type ChartView,
   type HoverHit,
 } from './chart';
-import { downloadPng } from './export';
+import { downloadPng, type PngFit } from './export';
+import { fitSeries, type FitResult } from './fit';
 import './style.css';
 import { formatCount, formatExact } from './format';
 import {
@@ -30,10 +32,28 @@ const plotHost = required<HTMLDivElement>('plot-host');
 const emptyState = required<HTMLDivElement>('empty');
 const tooltip = required<HTMLDivElement>('tooltip');
 const downloadButton = required<HTMLButtonElement>('download');
+const fitButton = required<HTMLButtonElement>('fit');
 const clearButton = required<HTMLButtonElement>('clear');
+const fitBlock = required<HTMLElement>('fit-block');
+const fitResults = required<HTMLDivElement>('fit-results');
+const plotNote = required<HTMLParagraphElement>('plot-note');
+
+const PLOT_NOTE =
+  'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
+const PLOT_NOTE_FIT =
+  'The curve passes through every term. The dashed line is a least-squares fit of those samples, not a closed form. Hover a step to read a term.';
+
+interface FitOutcome {
+  seed: bigint;
+  color: string;
+  end: number;
+  approximate: boolean;
+  result: FitResult;
+}
 
 let trajectories: Trajectory[] | null = null;
 let lastParsed: ParsedSeeds | null = null;
+let fits: FitOutcome[] | null = null;
 let view: ChartView | null = null;
 let renderFrame = 0;
 let paintedKey = '';
@@ -45,13 +65,22 @@ form.addEventListener('submit', (event) => {
 
 logInput.addEventListener('change', () => {
   if (!trajectories) return;
+  if (fits) fits = computeFits(trajectories, logInput.checked);
   showStatus();
+  renderFitPanel();
   scheduleRender();
 });
 
 downloadButton.addEventListener('click', () => {
   if (!trajectories || trajectories.length === 0) return;
-  downloadPng(trajectories, logInput.checked);
+  downloadPng(trajectories, logInput.checked, pngFits(fits));
+});
+
+fitButton.addEventListener('click', () => {
+  if (!trajectories || trajectories.length === 0) return;
+  fits = computeFits(trajectories, logInput.checked);
+  renderFitPanel();
+  scheduleRender();
 });
 
 clearButton.addEventListener('click', () => {
@@ -65,8 +94,10 @@ clearButton.addEventListener('click', () => {
   hideTooltip();
   setMessage([]);
   renderLegend(null);
+  resetFit();
   scheduleRender();
   downloadButton.disabled = true;
+  fitButton.disabled = true;
   seedsInput.focus();
 });
 
@@ -112,6 +143,8 @@ function generate(): void {
     trajectories = null;
     view = null;
     downloadButton.disabled = true;
+    fitButton.disabled = true;
+    resetFit();
     renderLegend(null);
     scheduleRender();
     const lead =
@@ -143,6 +176,8 @@ function generate(): void {
   lastParsed = parsed;
   trajectories = parsed.seeds.map((seed) => hailstone(seed, maxIterations));
   downloadButton.disabled = false;
+  fitButton.disabled = false;
+  resetFit();
   showStatus();
   renderLegend(trajectories);
   scheduleRender();
@@ -185,16 +220,101 @@ function render(): void {
   const width = Math.floor(plotHost.clientWidth);
   const height = Math.floor(plotHost.clientHeight);
   if (width < 40 || height < 40) return;
-  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${seriesKey(trajectories)}`;
+  const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
   if (key === paintedKey && view) return;
   paintedKey = key;
   hideTooltip();
   emptyState.hidden = true;
-  view = renderChart(
-    plotHost,
-    buildLayout(trajectories, { width, height, logY: logInput.checked }),
-    statusLine(trajectories),
-  );
+  const layout = buildLayout(trajectories, { width, height, logY: logInput.checked });
+  view = renderChart(plotHost, layout, statusLine(trajectories), buildFitPolylines(layout, pngFits(fits)));
+}
+
+function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
+  return series.map((trajectory, index) => ({
+    seed: trajectory.seed,
+    color: SERIES_COLORS[index % SERIES_COLORS.length],
+    end: trajectory.values.length - 1,
+    approximate: exceedsSafeInteger(trajectory.values),
+    result: fitSeries(trajectory.values, { logSpace }),
+  }));
+}
+
+function pngFits(series: FitOutcome[] | null): PngFit[] {
+  if (!series) return [];
+  const overlays: PngFit[] = [];
+  for (const fit of series) {
+    if (!fit.result.ok) continue;
+    overlays.push({ color: fit.color, predict: fit.result.predict, start: 0, end: fit.end });
+  }
+  return overlays;
+}
+
+function resetFit(): void {
+  fits = null;
+  fitBlock.hidden = true;
+  fitResults.replaceChildren();
+  plotNote.textContent = PLOT_NOTE;
+}
+
+function renderFitPanel(): void {
+  fitResults.replaceChildren();
+  if (!fits || fits.length === 0) {
+    fitBlock.hidden = true;
+    return;
+  }
+  fitBlock.hidden = false;
+  plotNote.textContent = fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE;
+  for (const fit of fits) {
+    const card = document.createElement('article');
+    card.className = 'fit-card';
+    const head = document.createElement('div');
+    head.className = 'fit-head';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = fit.color;
+    const title = document.createElement('p');
+    title.className = 'legend-seed';
+    title.textContent = formatExact(fit.seed);
+    head.append(swatch, title);
+    card.append(head);
+
+    if (!fit.result.ok) {
+      const message = document.createElement('p');
+      message.className = 'fit-note';
+      message.textContent = fit.result.message;
+      card.append(message);
+      fitResults.append(card);
+      continue;
+    }
+
+    const expression = document.createElement('p');
+    expression.className = 'fit-expr';
+    expression.textContent = fit.result.expression;
+    card.append(expression);
+    if (fit.result.substitution) {
+      const substitution = document.createElement('p');
+      substitution.className = 'fit-sub';
+      substitution.textContent = fit.result.substitution;
+      card.append(substitution);
+    }
+    const summary = document.createElement('p');
+    summary.className = 'fit-summary';
+    summary.textContent = fit.result.summary;
+    const note = document.createElement('p');
+    note.className = 'fit-note';
+    note.textContent = fit.approximate
+      ? `${fit.result.note} Some terms exceed 2^53 − 1, so this uses the same approximate heights as the chart.`
+      : fit.result.note;
+    card.append(summary, note);
+    fitResults.append(card);
+  }
+}
+
+function fitKey(series: FitOutcome[] | null): string {
+  if (!series) return 'none';
+  return series
+    .map((fit) => (fit.result.ok ? `${fit.result.logSpace ? 1 : 0}:${fit.result.expression}` : fit.result.message))
+    .join('|');
 }
 
 function seriesKey(series: Trajectory[]): string {

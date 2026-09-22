@@ -35,6 +35,7 @@ No server, account, or database is involved. After `npm install`, the app is ful
 
 - **Starting values.** One positive integer, or several separated by commas or spaces. `27` is the classic example: 111 steps, climbing to 9,232 before it falls to 1. `25, 26, 27` overlays three paths. At most 12 seeds are drawn.
 - **Generate.** Computes the sequences and redraws the chart.
+- **Fit function.** Fits each plotted trajectory with a polynomial and draws that fit as a dashed curve. The degree, at most 5, is chosen with BIC so the curve does not pick up extra wiggles. On a logarithmic axis the polynomial is fit to log₁₀(value), which matches the chart. The panel shows the expression, R², and RMSE. This approximates the samples on the chart. It is not a closed form for the Collatz sequence, which is discrete.
 - **Max iterations.** Safety cap. A sequence stops early at 1, or when it has taken this many steps (maximum 200,000). The total allowance across every seed is 500,000 steps.
 - **Logarithmic value axis.** Useful when one spike towers over the rest of the path. You can toggle it without recomputing.
 - **Hover.** Moving across the chart reads the iteration and the value of each seed that is still running at that step.
@@ -49,5 +50,6 @@ Sequences are computed with arbitrary-size integers. A term past 2^53 − 1 is s
 
 - `src/collatz.ts` — the 3n+1 step and the stopping rules
 - `src/chart.ts` — scales, the smooth curve, and the SVG chart
+- `src/fit.ts` — polynomial fit of a plotted trajectory
 - `src/export.ts` — PNG download
 - `src/main.ts` — the page controls
