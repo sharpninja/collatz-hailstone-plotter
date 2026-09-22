@@ -310,6 +310,80 @@ describe('parseSeeds', () => {
     expect(parseSeeds('primepowers:0..10, 4').rejected).toEqual(['primepowers:0..10']);
     expect(parseSeeds('primepowers:0..10, 4').seeds).toEqual([4n]);
   });
+
+  it('keeps 27 and drops 9 for odd-exponent prime powers', () => {
+    const span = parseSeeds('oddprimepowers:2..30');
+    expect(span.seeds).toEqual([2n, 3n, 5n, 7n, 8n, 11n, 13n, 17n, 19n, 23n, 27n, 29n]);
+    expect(span.seeds).toContain(3n);
+    expect(span.seeds).toContain(27n);
+    expect(span.seeds).not.toContain(9n);
+    expect(span.seeds).not.toContain(4n);
+    expect(span.seeds).not.toContain(25n);
+    expect(span.oddPrimePowerOnly).toBe(true);
+    expect(span.primeOnly).toBe(false);
+    expect(span.primePowerOnly).toBe(false);
+    expect(parseSeeds('ppodd:8..32').seeds).toEqual([8n, 11n, 13n, 17n, 19n, 23n, 27n, 29n, 31n, 32n]);
+    expect(parseSeeds('oddprimepowers:20..40').seeds).toEqual([23n, 27n, 29n, 31n, 32n, 37n]);
+    expect(parseSeeds('oddprimepowers:25..27').seeds).toEqual([27n]);
+    expect(parseSeeds('OddPrimePowers:3..27').seeds).toContain(3n);
+    expect(parseSeeds('OddPrimePowers:3..27').seeds).toContain(27n);
+    expect(parseSeeds('OddPrimePowers:3..27').seeds).not.toContain(9n);
+    expect(parseSeeds('ppodd: 8 .. 32').seeds).toEqual(parseSeeds('oddprimepowers:8...32').seeds);
+    expect(parseSeeds('primes:20..30').seeds).toEqual([23n, 29n]);
+    expect(parseSeeds('primepowers:2..50').seeds).toContain(9n);
+    expect(parseSeeds('primepowers:2..50').seeds).toContain(27n);
+  });
+
+  it('rejects an empty odd-exponent range and swaps inverted bounds', () => {
+    const empty = parseSeeds('oddprimepowers:14..16');
+    expect(empty.seeds).toEqual([]);
+    expect(empty.emptyOddPrimePowers).toEqual(['14..16']);
+    expect(empty.oddPrimePowerOnly).toBe(false);
+    expect(parseSeeds('oddprimepowers:9..9').emptyOddPrimePowers).toEqual(['9..9']);
+    expect(parseSeeds('ppodd:4..4').emptyOddPrimePowers).toEqual(['4..4']);
+    expect(parseSeeds('oddprimepowers:24..26').seeds).toEqual([]);
+    const swapped = parseSeeds('oddprimepowers:32-8');
+    expect(swapped.seeds).toEqual([8n, 11n, 13n, 17n, 19n, 23n, 27n, 29n, 31n, 32n]);
+    expect(swapped.reversed).toBe(1);
+    const both = parseSeeds('primes:14..16, oddprimepowers:9..9');
+    expect(both.seeds).toEqual([]);
+    expect(both.emptyPrimes).toEqual(['14..16']);
+    expect(both.emptyOddPrimePowers).toEqual(['9..9']);
+  });
+
+  it('mixes odd-exponent ranges without double-counting the cap', () => {
+    const withPrimes = parseSeeds('primes:2..30, oddprimepowers:2..30');
+    expect(withPrimes.seeds).toEqual([2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 8n, 27n]);
+    expect(withPrimes.duplicates).toBe(10);
+    expect(withPrimes.overflow).toBeNull();
+    expect(withPrimes.primeOnly).toBe(false);
+    expect(withPrimes.oddPrimePowerOnly).toBe(false);
+    const withPowers = parseSeeds('primepowers:4..16, oddprimepowers:2..19');
+    expect(withPowers.seeds).toEqual([4n, 8n, 9n, 16n, 2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n]);
+    expect(withPowers.duplicates).toBe(1);
+    expect(withPowers.overflow).toBeNull();
+    const beside = parseSeeds('3, oddprimepowers:25..32');
+    expect(beside.seeds).toEqual([3n, 27n, 29n, 31n, 32n]);
+    expect(beside.seeds).not.toContain(9n);
+    expect(beside.seeds).not.toContain(25n);
+  });
+
+  it('refuses an oversize odd-exponent range', () => {
+    const wide = parseSeeds('oddprimepowers:2..50');
+    expect(wide.seeds).toEqual([]);
+    expect(wide.overflow).toBe(18n);
+    expect(wide.oddPrimePowerOnly).toBe(false);
+    const started = Date.now();
+    const enormous = parseSeeds(`oddprimepowers:2..1${'0'.repeat(40)}`);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(enormous.seeds).toEqual([]);
+    expect(enormous.overCap).toBe(true);
+    expect(parseSeeds('oddprimepowers:33554432..33554432').seeds).toEqual([33554432n]);
+    expect(parseSeeds('oddprimepowers:16777216..16777216').emptyOddPrimePowers).toEqual(['16777216..16777216']);
+    expect(parseSeeds('oddprimepowers:14348907..14348907').seeds).toEqual([14348907n]);
+    expect(parseSeeds('oddprimepowers:0..10, 3').rejected).toEqual(['oddprimepowers:0..10']);
+    expect(parseSeeds('oddprimepowers:0..10, 3').seeds).toEqual([3n]);
+  });
 });
 
 describe('parseMaxIterations', () => {

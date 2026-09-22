@@ -11,7 +11,7 @@ import {
 } from './chart';
 import { downloadPng, type PngFit } from './export';
 import { fitSeries, type FitResult } from './fit';
-import { groupParityForms, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
+import { groupParityForms, oddPrimePowerParitySummary, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
 import {
@@ -160,22 +160,26 @@ generate();
 function generate(): void {
   const parsed = parseSeeds(seedsInput.value);
   const maxIterations = parseMaxIterations(maxInput.value);
-  if (parsed.emptyPrimes.length > 0 || parsed.emptyPrimePowers.length > 0) {
+  if (parsed.emptyPrimes.length > 0 || parsed.emptyPrimePowers.length > 0 || parsed.emptyOddPrimePowers.length > 0) {
     abandonPlot();
     const text = [
       parsed.emptyPrimes.length > 0 ? emptySetMessage(parsed.emptyPrimes, 'primes') : '',
       parsed.emptyPrimePowers.length > 0 ? emptySetMessage(parsed.emptyPrimePowers, 'prime powers') : '',
+      parsed.emptyOddPrimePowers.length > 0
+        ? emptySetMessage(parsed.emptyOddPrimePowers, 'odd-exponent prime powers')
+        : '',
     ]
       .filter((line) => line.length > 0)
       .join(' ');
     setMessage([{ kind: 'error', text }, ...warningParts(parsed, [])]);
     return;
   }
-  if (parsed.tooWide.length > 0 || parsed.tooWidePowers.length > 0) {
+  if (parsed.tooWide.length > 0 || parsed.tooWidePowers.length > 0 || parsed.tooWideOddPowers.length > 0) {
     abandonPlot();
     const text = [
       parsed.tooWide.length > 0 ? tooWideMessage(parsed.tooWide, 'prime') : '',
       parsed.tooWidePowers.length > 0 ? tooWideMessage(parsed.tooWidePowers, 'prime-power') : '',
+      parsed.tooWideOddPowers.length > 0 ? tooWideMessage(parsed.tooWideOddPowers, 'odd-exponent prime-power') : '',
     ]
       .filter((line) => line.length > 0)
       .join(' ');
@@ -379,6 +383,14 @@ function renderFitPanel(): void {
         `${primePowerParitySummary(fits.length, forms.length)} This compares the prime powers on the chart. It is not a proof for every prime power, or for every starting value.`,
       ),
     );
+  } else if (lastParsed?.oddPrimePowerOnly && fits.length > 1) {
+    const forms = groupParityForms(fits.map((fit) => fit.parity));
+    fitResults.append(
+      paragraph(
+        'fit-summary',
+        `${oddPrimePowerParitySummary(fits.length, forms.length)} This compares that stress-test sample on the chart. It is not a proof for every such seed, or for every starting value.`,
+      ),
+    );
   }
   for (const fit of fits) {
     fitResults.append(renderFitCard(fit));
@@ -490,10 +502,8 @@ function emptySetMessage(ranges: string[], noun: string): string {
 }
 
 function tooWideMessage(ranges: string[], noun: string): string {
-  const label = noun === 'prime' ? 'prime range' : 'prime-power range';
-  const labels = noun === 'prime' ? 'prime ranges' : 'prime-power ranges';
-  if (ranges.length === 1) return `The ${label} ${ranges[0]} is too wide to expand. Shorten it.`;
-  return `Those ${labels} are too wide to expand. Shorten them.`;
+  if (ranges.length === 1) return `The ${noun} range ${ranges[0]} is too wide to expand. Shorten it.`;
+  return `Those ${noun} ranges are too wide to expand. Shorten them.`;
 }
 
 function warningParts(
@@ -622,6 +632,10 @@ function renderPatterns(series: Trajectory[] | null): void {
     const powerWord = series.length === 1 ? 'prime power' : 'prime powers';
     patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} ${powerWord})`;
     patternsNote.textContent = `${primePowerParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares the prime powers on the chart. It is not a proof for every prime power, or for every starting value.`;
+  } else if (lastParsed?.oddPrimePowerOnly) {
+    const formWord = groups.length === 1 ? 'form' : 'forms';
+    patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} ${formWord} among ${formatCount(series.length)} odd-exponent prime powers)`;
+    patternsNote.textContent = `${oddPrimePowerParitySummary(series.length, groups.length)} Seeds that share a parity pattern share one formula in N: the same odd-step count o, the same divisions e, and the same constant m. This compares that stress-test sample on the chart. It is not a proof for every such seed, or for every starting value.`;
   } else {
     const noun = groups.length === 1 ? 'pattern' : 'patterns';
     patternsHeading.textContent = `Distinct functions (${formatCount(groups.length)} unique ${noun})`;

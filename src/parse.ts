@@ -32,10 +32,14 @@ export interface ParsedSeeds {
   emptyPrimes: string[];
   /** Prime-power ranges with no p^k for k ≥ 2, written `lo..hi` after swapping. */
   emptyPrimePowers: string[];
+  /** Odd-exponent prime-power ranges with nothing in range, written `lo..hi` after swapping. */
+  emptyOddPrimePowers: string[];
   /** Prime ranges that were too wide to check. */
   tooWide: string[];
   /** Prime-power ranges that were too wide to check. */
   tooWidePowers: string[];
+  /** Odd-exponent prime-power ranges that were too wide to check. */
+  tooWideOddPowers: string[];
   /**
    * More than {@link MAX_SEEDS} seeds, but the exact size was not counted.
    * `seeds` is empty. Used when a prime range sits past the sieve.
@@ -51,11 +55,17 @@ export interface ParsedSeeds {
    * Used to describe those seeds' parity forms.
    */
   primePowerOnly: boolean;
+  /**
+   * Every plotted seed came from an odd-exponent prime-power range
+   * (p^k with k odd, including primes as p^1).
+   */
+  oddPrimePowerOnly: boolean;
 }
 
 const RANGE = /^(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/;
 const PRIMES = /^(?:primes|p)\s*(?::\s*|\s+)(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/i;
 const PRIME_POWERS = /^(?:primepowers|pp)\s*(?::\s*|\s+)(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/i;
+const ODD_PRIME_POWERS = /^(?:oddprimepowers|ppodd)\s*(?::\s*|\s+)(\d+)\s*(?:\.{2,3}|-)\s*(\d+)$/i;
 
 interface RangePiece {
   kind: 'range';
@@ -82,8 +92,15 @@ interface PrimePowersPiece {
   label: string;
 }
 
+interface OddPrimePowersPiece {
+  kind: 'odd-powers';
+  lo: bigint;
+  hi: bigint;
+  label: string;
+}
+
 type IntegerPiece = RangePiece | NumberPiece;
-type SpecialPiece = PrimesPiece | PrimePowersPiece;
+type SpecialPiece = PrimesPiece | PrimePowersPiece | OddPrimePowersPiece;
 type Piece = IntegerPiece | SpecialPiece;
 type Interval = readonly [bigint, bigint];
 
@@ -102,12 +119,31 @@ export function parseSeeds(text: string): ParsedSeeds {
   let sawExpansion = false;
   const emptyPrimes: string[] = [];
   const emptyPrimePowers: string[] = [];
+  const emptyOddPrimePowers: string[] = [];
   const tooWide: string[] = [];
   const tooWidePowers: string[] = [];
+  const tooWideOddPowers: string[] = [];
   const primeCensus = cachedCensus(censusPrimes);
   const powerCensus = cachedCensus(censusPrimePowers);
+  const oddCensus = cachedCensus(censusOddPrimePowers);
+  const oddHigherCensus = cachedCensus(censusOddHigherPowers);
 
   for (const token of tokenize(text)) {
+    const oddPowers = readBounded(token, ODD_PRIME_POWERS);
+    if (oddPowers === 'bad') {
+      rejected.push(token);
+      continue;
+    }
+    if (oddPowers) {
+      sawExpansion = true;
+      reversed += oddPowers.reversed ? 1 : 0;
+      const found = oddCensus(oddPowers.lo, oddPowers.hi);
+      if (found.tooWide) tooWideOddPowers.push(oddPowers.label);
+      else if (!found.overCap && found.count === 0n) emptyOddPrimePowers.push(oddPowers.label);
+      pieces.push({ kind: 'odd-powers', lo: oddPowers.lo, hi: oddPowers.hi, label: oddPowers.label });
+      continue;
+    }
+
     const powers = readBounded(token, PRIME_POWERS);
     if (powers === 'bad') {
       rejected.push(token);
@@ -170,25 +206,31 @@ export function parseSeeds(text: string): ParsedSeeds {
     reversed,
     emptyPrimes,
     emptyPrimePowers,
+    emptyOddPrimePowers,
     tooWide: [] as string[],
     tooWidePowers: [] as string[],
+    tooWideOddPowers: [] as string[],
     overCap: false,
     primeOnly: false,
     primePowerOnly: false,
+    oddPrimePowerOnly: false,
   };
 
-  // An empty prime or prime-power range is an error on its own, so nothing else is plotted.
-  if (emptyPrimes.length > 0 || emptyPrimePowers.length > 0) return base;
-  if (tooWide.length > 0 || tooWidePowers.length > 0) return { ...base, tooWide, tooWidePowers };
+  // An empty special range is an error on its own, so nothing else is plotted.
+  if (emptyPrimes.length > 0 || emptyPrimePowers.length > 0 || emptyOddPrimePowers.length > 0) return base;
+  if (tooWide.length > 0 || tooWidePowers.length > 0 || tooWideOddPowers.length > 0) {
+    return { ...base, tooWide, tooWidePowers, tooWideOddPowers };
+  }
 
   if (!sawExpansion) return parseIndividuals(pieces, rejected);
 
-  const distinct = distinctCensus(pieces, primeCensus, powerCensus);
-  if (distinct.tooWide || distinct.tooWidePowers) {
+  const distinct = distinctCensus(pieces, primeCensus, powerCensus, oddCensus, oddHigherCensus);
+  if (distinct.tooWide || distinct.tooWidePowers || distinct.tooWideOdd) {
     return {
       ...base,
       tooWide: distinct.tooWide ? labelsOf(pieces, 'primes') : [],
       tooWidePowers: distinct.tooWidePowers ? labelsOf(pieces, 'powers') : [],
+      tooWideOddPowers: distinct.tooWideOdd ? labelsOf(pieces, 'odd-powers') : [],
     };
   }
   if (distinct.overCap) return { ...base, overCap: true };
@@ -197,7 +239,16 @@ export function parseSeeds(text: string): ParsedSeeds {
   const expanded = expandInOrder(pieces);
   const primeOnly = expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'primes');
   const primePowerOnly = expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'powers');
-  return { ...base, seeds: expanded.seeds, duplicates: expanded.duplicates, primeOnly, primePowerOnly };
+  const oddPrimePowerOnly =
+    expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'odd-powers');
+  return {
+    ...base,
+    seeds: expanded.seeds,
+    duplicates: expanded.duplicates,
+    primeOnly,
+    primePowerOnly,
+    oddPrimePowerOnly,
+  };
 }
 
 /** Positive integer within the iteration cap, or null when the field is unusable. */
@@ -210,9 +261,10 @@ export function parseMaxIterations(text: string): number | null {
 }
 
 function tokenize(text: string): string[] {
-  // Prime-power forms come before `p:` / `primes`, which come before a plain `10..50`.
+  // Odd-exponent forms come first so `ppodd` is not split as `pp`, and `oddprimepowers`
+  // is not split as `primepowers`. Those come before `p:` / `primes`, then a plain `10..50`.
   const token =
-    /(?:primepowers|pp)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primepowers|pp)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|\d+\s*(?:\.{2,3}|-)\s*\d+|[^\s,]+/gi;
+    /(?:oddprimepowers|ppodd)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:oddprimepowers|ppodd)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primepowers|pp)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primepowers|pp)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s*:\s*\d+\s*(?:\.{2,3}|-)\s*\d+|(?:primes|p)\s+\d+\s*(?:\.{2,3}|-)\s*\d+|\d+\s*(?:\.{2,3}|-)\s*\d+|[^\s,]+/gi;
   return [...text.matchAll(token)].map((match) => match[0]);
 }
 
@@ -280,26 +332,63 @@ interface DistinctCensus {
   overCap: boolean;
   tooWide: boolean;
   tooWidePowers: boolean;
+  tooWideOdd: boolean;
 }
 
-/** Inclusive distinct count of integers plus primes and prime powers outside those integers. */
+/**
+ * Inclusive distinct count of integers plus primes and prime powers outside those integers.
+ * Primes sit in both a primes range and an odd-exponent range, and p^k for odd k ≥ 3 sits
+ * in both a prime-power range and an odd-exponent range, so those overlaps are subtracted once.
+ */
 function distinctCensus(
   pieces: Piece[],
   primeCensus: (lo: bigint, hi: bigint) => PrimeCensus,
   powerCensus: (lo: bigint, hi: bigint) => PrimeCensus,
+  oddCensus: (lo: bigint, hi: bigint) => PrimeCensus,
+  oddHigherCensus: (lo: bigint, hi: bigint) => PrimeCensus,
 ): DistinctCensus {
   const integers = pieces.filter((piece): piece is IntegerPiece => piece.kind === 'num' || piece.kind === 'range');
   const cover = mergeIntervals(
     integers.map((piece) => (piece.kind === 'num' ? [piece.value, piece.value] : [piece.lo, piece.hi])),
   );
-  const none: DistinctCensus = { count: 0n, overCap: false, tooWide: false, tooWidePowers: false };
+  const none: DistinctCensus = {
+    count: 0n,
+    overCap: false,
+    tooWide: false,
+    tooWidePowers: false,
+    tooWideOdd: false,
+  };
   const primeExtra = countOutside(pieces, 'primes', cover, primeCensus);
   if (primeExtra === 'tooWide') return { ...none, tooWide: true };
   if (primeExtra === 'overCap') return { ...none, overCap: true };
   const powerExtra = countOutside(pieces, 'powers', cover, powerCensus);
   if (powerExtra === 'tooWide') return { ...none, tooWidePowers: true };
   if (powerExtra === 'overCap') return { ...none, overCap: true };
-  return { count: mergedCount(integers) + primeExtra + powerExtra, overCap: false, tooWide: false, tooWidePowers: false };
+  const oddExtra = countOutside(pieces, 'odd-powers', cover, oddCensus);
+  if (oddExtra === 'tooWide') return { ...none, tooWideOdd: true };
+  if (oddExtra === 'overCap') return { ...none, overCap: true };
+
+  const primeIntervals = mergeIntervals(intervalsOf(pieces, 'primes'));
+  const powerIntervals = mergeIntervals(intervalsOf(pieces, 'powers'));
+  const oddIntervals = mergeIntervals(intervalsOf(pieces, 'odd-powers'));
+  const primeOverlap = countInIntervals(intersectIntervals(primeIntervals, oddIntervals), cover, primeCensus);
+  if (primeOverlap === 'tooWide') return { ...none, tooWide: true };
+  if (primeOverlap === 'overCap') return { ...none, overCap: true };
+  const higherOverlap = countInIntervals(intersectIntervals(powerIntervals, oddIntervals), cover, oddHigherCensus);
+  if (higherOverlap === 'tooWide') return { ...none, tooWideOdd: true };
+  if (higherOverlap === 'overCap') return { ...none, overCap: true };
+
+  return {
+    count: mergedCount(integers) + primeExtra + powerExtra + oddExtra - primeOverlap - higherOverlap,
+    overCap: false,
+    tooWide: false,
+    tooWidePowers: false,
+    tooWideOdd: false,
+  };
+}
+
+function intervalsOf(pieces: Piece[], kind: SpecialPiece['kind']): Interval[] {
+  return pieces.filter((piece): piece is SpecialPiece => piece.kind === kind).map((piece) => [piece.lo, piece.hi]);
 }
 
 function countOutside(
@@ -308,11 +397,16 @@ function countOutside(
   cover: Interval[],
   census: (lo: bigint, hi: bigint) => PrimeCensus,
 ): bigint | 'tooWide' | 'overCap' {
-  const intervals: Interval[] = pieces
-    .filter((piece): piece is SpecialPiece => piece.kind === kind)
-    .map((piece) => [piece.lo, piece.hi]);
+  return countInIntervals(mergeIntervals(intervalsOf(pieces, kind)), cover, census);
+}
+
+function countInIntervals(
+  intervals: Interval[],
+  cover: Interval[],
+  census: (lo: bigint, hi: bigint) => PrimeCensus,
+): bigint | 'tooWide' | 'overCap' {
   let extra = 0n;
-  for (const [lo, hi] of mergeIntervals(intervals)) {
+  for (const [lo, hi] of intervals) {
     for (const [start, end] of subtractInterval(lo, hi, cover)) {
       const found = census(start, end);
       if (found.tooWide) return 'tooWide';
@@ -436,6 +530,150 @@ function isPrimePower(n: bigint): boolean {
   if (n < 4n) return false;
   const maxExp = n.toString(2).length - 1;
   for (let exp = 2; exp <= maxExp; exp++) {
+    const root = integerRoot(n, exp);
+    if (powEquals(root, exp, n) && isPrime(root)) return true;
+  }
+  return false;
+}
+
+/**
+ * p^k with k odd: primes (k = 1) and higher odd powers such as 8 = 2^3, 27 = 3^3, 32 = 2^5.
+ * Squares and other even exponents are not included.
+ */
+function censusOddPrimePowers(lo: bigint, hi: bigint): PrimeCensus {
+  if (hi < lo || hi < 2n) return NO_PRIMES;
+  const start = lo < 2n ? 2n : lo;
+  if (start > hi) return NO_PRIMES;
+
+  if (hi <= BigInt(PRIME_SIEVE_LIMIT)) {
+    return { count: BigInt(oddPrimePowerList(Number(start), Number(hi)).length), overCap: false, tooWide: false };
+  }
+  if (hi - start <= BigInt(PRIME_SCAN_LIMIT)) {
+    const found = scanMatching(start, hi, Number.MAX_SAFE_INTEGER, isOddPrimePower);
+    return { count: BigInt(found.values.length), overCap: false, tooWide: false };
+  }
+  if (bertrandLowerBound(start, hi) > MAX_SEEDS) {
+    return { count: null, overCap: true, tooWide: false };
+  }
+  const found = scanMatching(start, hi, MAX_SEEDS + 1, isOddPrimePower);
+  if (found.values.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  if (found.finished) return { count: BigInt(found.values.length), overCap: false, tooWide: false };
+  return { count: null, overCap: false, tooWide: true };
+}
+
+/** p^k with odd k ≥ 3. Used to subtract the overlap of a prime-power range and an odd-exponent range. */
+function censusOddHigherPowers(lo: bigint, hi: bigint): PrimeCensus {
+  if (hi < lo || hi < 8n) return NO_PRIMES;
+  const start = lo < 8n ? 8n : lo;
+  if (start > hi) return NO_PRIMES;
+
+  if (hi <= BigInt(PRIME_SIEVE_LIMIT)) {
+    return { count: BigInt(oddHigherPowerList(Number(start), Number(hi)).length), overCap: false, tooWide: false };
+  }
+  if (hi - start <= BigInt(PRIME_SCAN_LIMIT)) {
+    const found = scanMatching(start, hi, Number.MAX_SAFE_INTEGER, isOddHigherPrimePower);
+    return { count: BigInt(found.values.length), overCap: false, tooWide: false };
+  }
+  if (oddPowersOfTwoInRange(start, hi) > MAX_SEEDS) {
+    return { count: null, overCap: true, tooWide: false };
+  }
+  const found = scanMatching(start, hi, MAX_SEEDS + 1, isOddHigherPrimePower);
+  if (found.values.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  if (found.finished) return { count: BigInt(found.values.length), overCap: false, tooWide: false };
+  return { count: null, overCap: false, tooWide: true };
+}
+
+function listOddPrimePowers(lo: bigint, hi: bigint): bigint[] {
+  if (hi < lo || hi < 2n) return [];
+  const start = lo < 2n ? 2n : lo;
+  if (start > hi) return [];
+  if (hi <= BigInt(PRIME_SIEVE_LIMIT)) return oddPrimePowerList(Number(start), Number(hi));
+  return scanMatching(start, hi, Number.MAX_SAFE_INTEGER, isOddPrimePower).values;
+}
+
+function oddPrimePowerList(lo: number, hi: number): bigint[] {
+  if (hi < 2 || hi < lo) return [];
+  const composite = sieve(hi);
+  const values: number[] = [];
+  for (let p = 2; p <= hi; p++) {
+    if (composite[p]) continue;
+    if (p >= lo) values.push(p);
+    let value = p;
+    const step = p * p;
+    while (value <= Math.floor(hi / step)) {
+      value *= step;
+      if (value >= lo) values.push(value);
+    }
+  }
+  values.sort((a, b) => a - b);
+  return values.map((value) => BigInt(value));
+}
+
+function oddHigherPowerList(lo: number, hi: number): bigint[] {
+  if (hi < 8 || hi < lo) return [];
+  const root = Math.floor(Math.cbrt(hi));
+  const composite = sieve(Math.max(root, 2));
+  const values: number[] = [];
+  for (let p = 2; p <= root; p++) {
+    if (composite[p]) continue;
+    let value = p;
+    const step = p * p;
+    while (value <= Math.floor(hi / step)) {
+      value *= step;
+      if (value >= lo) values.push(value);
+    }
+  }
+  values.sort((a, b) => a - b);
+  return values.map((value) => BigInt(value));
+}
+
+function oddPowersOfTwoInRange(lo: bigint, hi: bigint): number {
+  if (hi < 8n || hi < lo) return 0;
+  let value = 8n;
+  if (lo > value) {
+    const floorLog = lo.toString(2).length - 1;
+    let exp = floorLog;
+    if (1n << BigInt(exp) < lo) exp += 1;
+    if (exp < 3) exp = 3;
+    if (exp % 2 === 0) exp += 1;
+    value = 1n << BigInt(exp);
+  }
+  let count = 0;
+  while (value <= hi && count <= MAX_SEEDS + 1) {
+    count += 1;
+    if (value > hi >> 2n) break;
+    value <<= 2n;
+  }
+  return count;
+}
+
+function scanMatching(
+  start: bigint,
+  hi: bigint,
+  stopAt: number,
+  matches: (n: bigint) => boolean,
+): { values: bigint[]; finished: boolean } {
+  const values: bigint[] = [];
+  let current = start;
+  const budgetEnd = current + BigInt(PRIME_SEARCH_BUDGET);
+  const end = hi - current > BigInt(PRIME_SEARCH_BUDGET) ? budgetEnd : hi;
+  while (current <= end && values.length < stopAt) {
+    if (matches(current)) values.push(current);
+    current += 1n;
+  }
+  return { values, finished: current > hi };
+}
+
+function isOddPrimePower(n: bigint): boolean {
+  if (n < 2n) return false;
+  if (isPrime(n)) return true;
+  return isOddHigherPrimePower(n);
+}
+
+function isOddHigherPrimePower(n: bigint): boolean {
+  if (n < 8n) return false;
+  const maxExp = n.toString(2).length - 1;
+  for (let exp = 3; exp <= maxExp; exp += 2) {
     const root = integerRoot(n, exp);
     if (powEquals(root, exp, n) && isPrime(root)) return true;
   }
@@ -625,6 +863,21 @@ function mergeIntervals(intervals: Interval[]): Interval[] {
   return merged;
 }
 
+/** Overlap of two merged ascending interval lists. */
+function intersectIntervals(left: Interval[], right: Interval[]): Interval[] {
+  const result: Interval[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length && j < right.length) {
+    const start = left[i][0] > right[j][0] ? left[i][0] : right[j][0];
+    const end = left[i][1] < right[j][1] ? left[i][1] : right[j][1];
+    if (start <= end) result.push([start, end]);
+    if (left[i][1] <= right[j][1]) i += 1;
+    else j += 1;
+  }
+  return result;
+}
+
 /** Portions of [lo, hi] that are not covered by `cover` (merged, ascending). */
 function subtractInterval(lo: bigint, hi: bigint, cover: Interval[]): Interval[] {
   const result: Interval[] = [];
@@ -677,7 +930,13 @@ function expandInOrder(pieces: Piece[]): { seeds: bigint[]; duplicates: number }
       }
       continue;
     }
-    for (const power of listPrimePowers(piece.lo, piece.hi)) {
+    if (piece.kind === 'powers') {
+      for (const power of listPrimePowers(piece.lo, piece.hi)) {
+        duplicates += remember(power, seeds, seen);
+      }
+      continue;
+    }
+    for (const power of listOddPrimePowers(piece.lo, piece.hi)) {
       duplicates += remember(power, seeds, seen);
     }
   }
@@ -723,10 +982,13 @@ function parseIndividuals(pieces: Piece[], rejected: string[]): ParsedSeeds {
     reversed: 0,
     emptyPrimes: [],
     emptyPrimePowers: [],
+    emptyOddPrimePowers: [],
     tooWide: [],
     tooWidePowers: [],
+    tooWideOddPowers: [],
     overCap: false,
     primeOnly: false,
     primePowerOnly: false,
+    oddPrimePowerOnly: false,
   };
 }

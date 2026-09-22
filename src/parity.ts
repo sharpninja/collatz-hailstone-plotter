@@ -24,9 +24,19 @@ export function primePowerParitySummary(powerCount: number, formCount: number): 
   return seedParitySummary(powerCount, formCount, 'prime-power');
 }
 
-function seedParitySummary(count: number, formCount: number, noun: 'prime' | 'prime-power'): string {
+/** How many distinct parity forms the plotted odd-exponent prime-power seeds take. */
+export function oddPrimePowerParitySummary(powerCount: number, formCount: number): string {
+  return seedParitySummary(powerCount, formCount, 'odd-exponent prime-power');
+}
+
+function seedParitySummary(
+  count: number,
+  formCount: number,
+  noun: 'prime' | 'prime-power' | 'odd-exponent prime-power',
+): string {
   const forms = `${formatParityCount(formCount)} distinct parity ${formCount === 1 ? 'form' : 'forms'}`;
-  const plural = noun === 'prime' ? 'prime seeds' : 'prime-power seeds';
+  const plural =
+    noun === 'prime' ? 'prime seeds' : noun === 'prime-power' ? 'prime-power seeds' : 'odd-exponent prime-power seeds';
   if (count === 1) return `This ${noun} seed takes ${forms}.`;
   return `These ${formatParityCount(count)} ${plural} take ${forms}.`;
 }
