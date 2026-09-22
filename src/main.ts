@@ -18,14 +18,17 @@ import { TrajectoryPlayer, clampStepMs, scoreTrajectory } from './sonify';
 import {
   MAX_ITERATION_CAP,
   MAX_SEEDS,
+  MAX_SEEDS_LIMIT,
   TOTAL_STEP_BUDGET,
   parseMaxIterations,
+  parseMaxSeeds,
   parseSeeds,
   type ParsedSeeds,
 } from './parse';
 
 const seedsInput = required<HTMLTextAreaElement>('seeds');
 const maxInput = required<HTMLInputElement>('max-steps');
+const maxSeedsInput = required<HTMLInputElement>('max-seeds');
 const logInput = required<HTMLInputElement>('log-scale');
 const alignInput = required<HTMLInputElement>('align-plots');
 const beatsInput = required<HTMLInputElement>('mark-beats');
@@ -84,6 +87,7 @@ interface FitOutcome {
 
 let trajectories: Trajectory[] | null = null;
 let lastParsed: ParsedSeeds | null = null;
+let seedCap = MAX_SEEDS;
 let fits: FitOutcome[] | null = null;
 let view: ChartView | null = null;
 let renderFrame = 0;
@@ -161,6 +165,8 @@ clearButton.addEventListener('click', () => {
   levelBar.style.width = '0';
   seedsInput.value = '';
   maxInput.value = '10000';
+  maxSeedsInput.value = String(MAX_SEEDS);
+  seedCap = MAX_SEEDS;
   logInput.checked = false;
   alignInput.checked = false;
   trajectories = null;
@@ -215,7 +221,19 @@ observer.observe(plotHost);
 generate();
 
 function generate(): void {
-  const parsed = parseSeeds(seedsInput.value);
+  const maxSeeds = parseMaxSeeds(maxSeedsInput.value);
+  if (maxSeeds === null) {
+    abandonPlot();
+    setMessage([
+      {
+        kind: 'error',
+        text: `Set max seeds to a whole number from 1 to ${formatCount(MAX_SEEDS_LIMIT)}.`,
+      },
+    ]);
+    return;
+  }
+  seedCap = maxSeeds;
+  const parsed = parseSeeds(seedsInput.value, maxSeeds);
   const maxIterations = parseMaxIterations(maxInput.value);
   if (parsed.emptyPrimes.length > 0 || parsed.emptyPrimePowers.length > 0 || parsed.emptyOddPrimePowers.length > 0) {
     abandonPlot();
@@ -248,7 +266,7 @@ function generate(): void {
     setMessage([
       {
         kind: 'error',
-        text: `That includes more than ${MAX_SEEDS} seeds. At most ${MAX_SEEDS} can be plotted.`,
+        text: overCapMessage(seedCap),
       },
       ...warningParts(parsed, []),
     ]);
@@ -259,7 +277,7 @@ function generate(): void {
     setMessage([
       {
         kind: 'error',
-        text: `That expands to ${formatExact(parsed.overflow)} seeds. At most ${MAX_SEEDS} can be plotted.`,
+        text: overflowMessage(parsed.overflow, seedCap),
       },
       ...warningParts(parsed, []),
     ]);
@@ -635,6 +653,21 @@ function seriesKey(series: Trajectory[]): string {
     .join(',');
 }
 
+function overCapMessage(cap: number): string {
+  const limit = `At most ${formatCount(cap)} can be plotted.`;
+  if (cap >= MAX_SEEDS_LIMIT) return `That includes more than ${formatCount(cap)} seeds. ${limit}`;
+  return `That includes more than ${formatCount(cap)} seeds. ${limit} Raise Max seeds to plot if you want a larger set (up to ${formatCount(MAX_SEEDS_LIMIT)}).`;
+}
+
+function overflowMessage(count: bigint, cap: number): string {
+  const size = `That expands to ${formatExact(count)} seeds. At most ${formatCount(cap)} can be plotted.`;
+  if (count <= BigInt(cap)) return size;
+  if (count <= BigInt(MAX_SEEDS_LIMIT)) {
+    return `${size} Raise Max seeds to plot to at least ${formatExact(count)}.`;
+  }
+  return `${size} Max seeds to plot only goes up to ${formatCount(MAX_SEEDS_LIMIT)}.`;
+}
+
 function emptySetMessage(ranges: string[], noun: string): string {
   if (ranges.length === 1) return `No ${noun} in ${ranges[0]}.`;
   if (ranges.length === 2) return `No ${noun} in ${ranges[0]} or ${ranges[1]}.`;
@@ -663,7 +696,10 @@ function warningParts(
     });
   }
   if (parsed.omitted > 0) {
-    parts.push({ kind: 'warn', text: `Only the first ${MAX_SEEDS} seeds are plotted.` });
+    parts.push({
+      kind: 'warn',
+      text: `Only the first ${formatCount(seedCap)} seeds are plotted. ${formatCount(parsed.omitted)} more were skipped.`,
+    });
   }
   if (parsed.reversed > 0) {
     parts.push({

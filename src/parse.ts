@@ -1,4 +1,6 @@
 export const MAX_SEEDS = 12;
+/** Highest value the Max seeds control accepts. */
+export const MAX_SEEDS_LIMIT = 500;
 export const MAX_SEED_DIGITS = 120;
 export const MAX_ITERATION_CAP = 200_000;
 export const TOTAL_STEP_BUDGET = 500_000;
@@ -18,12 +20,12 @@ export interface ParsedSeeds {
   seeds: bigint[];
   rejected: string[];
   duplicates: number;
-  /** Valid seeds dropped because only {@link MAX_SEEDS} are plotted. */
+  /** Valid seeds dropped because only the active cap are plotted. */
   omitted: number;
   /**
    * Distinct seeds a range expansion would produce when that count is above
-   * {@link MAX_SEEDS}. `seeds` is empty in that case so nothing is plotted.
-   * A list of individual numbers still truncates via `omitted`.
+   * the active cap (default {@link MAX_SEEDS}). `seeds` is empty in that case
+   * so nothing is plotted. A list of individual numbers still truncates via `omitted`.
    */
   overflow: bigint | null;
   /** Ranges written high-to-low and read from the smaller end upward. */
@@ -41,7 +43,7 @@ export interface ParsedSeeds {
   /** Odd-exponent prime-power ranges that were too wide to check. */
   tooWideOddPowers: string[];
   /**
-   * More than {@link MAX_SEEDS} seeds, but the exact size was not counted.
+   * More than the active cap, but the exact size was not counted.
    * `seeds` is empty. Used when a prime range sits past the sieve.
    */
   overCap: boolean;
@@ -112,7 +114,14 @@ interface PrimeCensus {
 
 const NO_PRIMES: PrimeCensus = { count: 0n, overCap: false, tooWide: false };
 
-export function parseSeeds(text: string): ParsedSeeds {
+/**
+ * Parse starting values. `maxSeeds` is how many distinct seeds may be plotted
+ * (default {@link MAX_SEEDS}, at most {@link MAX_SEEDS_LIMIT}). A range that
+ * expands past that cap is refused. A bare list keeps the first seeds and
+ * counts the rest in `omitted`.
+ */
+export function parseSeeds(text: string, maxSeeds: number = MAX_SEEDS): ParsedSeeds {
+  const limit = clampSeedLimit(maxSeeds);
   const rejected: string[] = [];
   const pieces: Piece[] = [];
   let reversed = 0;
@@ -123,10 +132,10 @@ export function parseSeeds(text: string): ParsedSeeds {
   const tooWide: string[] = [];
   const tooWidePowers: string[] = [];
   const tooWideOddPowers: string[] = [];
-  const primeCensus = cachedCensus(censusPrimes);
-  const powerCensus = cachedCensus(censusPrimePowers);
-  const oddCensus = cachedCensus(censusOddPrimePowers);
-  const oddHigherCensus = cachedCensus(censusOddHigherPowers);
+  const primeCensus = cachedCensus((lo, hi) => censusPrimes(lo, hi, limit));
+  const powerCensus = cachedCensus((lo, hi) => censusPrimePowers(lo, hi, limit));
+  const oddCensus = cachedCensus((lo, hi) => censusOddPrimePowers(lo, hi, limit));
+  const oddHigherCensus = cachedCensus((lo, hi) => censusOddHigherPowers(lo, hi, limit));
 
   for (const token of tokenize(text)) {
     const oddPowers = readBounded(token, ODD_PRIME_POWERS);
@@ -222,7 +231,7 @@ export function parseSeeds(text: string): ParsedSeeds {
     return { ...base, tooWide, tooWidePowers, tooWideOddPowers };
   }
 
-  if (!sawExpansion) return parseIndividuals(pieces, rejected);
+  if (!sawExpansion) return parseIndividuals(pieces, rejected, limit);
 
   const distinct = distinctCensus(pieces, primeCensus, powerCensus, oddCensus, oddHigherCensus);
   if (distinct.tooWide || distinct.tooWidePowers || distinct.tooWideOdd) {
@@ -234,7 +243,7 @@ export function parseSeeds(text: string): ParsedSeeds {
     };
   }
   if (distinct.overCap) return { ...base, overCap: true };
-  if (distinct.count > BigInt(MAX_SEEDS)) return { ...base, overflow: distinct.count };
+  if (distinct.count > BigInt(limit)) return { ...base, overflow: distinct.count };
 
   const expanded = expandInOrder(pieces);
   const primeOnly = expanded.seeds.length > 0 && pieces.length > 0 && pieces.every((piece) => piece.kind === 'primes');
@@ -249,6 +258,20 @@ export function parseSeeds(text: string): ParsedSeeds {
     primePowerOnly,
     oddPrimePowerOnly,
   };
+}
+
+/** Whole number from 1 to {@link MAX_SEEDS_LIMIT}, or null when the field is unusable. */
+export function parseMaxSeeds(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_SEEDS_LIMIT) return null;
+  return value;
+}
+
+function clampSeedLimit(maxSeeds: number): number {
+  if (!Number.isInteger(maxSeeds) || maxSeeds < 1) return MAX_SEEDS;
+  return Math.min(maxSeeds, MAX_SEEDS_LIMIT);
 }
 
 /** Positive integer within the iteration cap, or null when the field is unusable. */
@@ -417,7 +440,7 @@ function countInIntervals(
   return extra;
 }
 
-function censusPrimes(lo: bigint, hi: bigint): PrimeCensus {
+function censusPrimes(lo: bigint, hi: bigint, limit: number): PrimeCensus {
   if (hi < lo || hi < 2n) return NO_PRIMES;
   const start = lo < 2n ? 2n : lo;
   if (start > hi) return NO_PRIMES;
@@ -431,11 +454,11 @@ function censusPrimes(lo: bigint, hi: bigint): PrimeCensus {
   }
   // Bertrand's postulate: a prime lies strictly between m and 2m, so a long
   // span from a small start is over the seed cap with no primality tests.
-  if (bertrandLowerBound(start, hi) > MAX_SEEDS) {
+  if (bertrandLowerBound(start, hi, limit) > limit) {
     return { count: null, overCap: true, tooWide: false };
   }
-  const found = scanPrimes(start, hi, MAX_SEEDS + 1, PRIME_SEARCH_BUDGET);
-  if (found.primes.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  const found = scanPrimes(start, hi, limit + 1, PRIME_SEARCH_BUDGET);
+  if (found.primes.length > limit) return { count: null, overCap: true, tooWide: false };
   if (found.finished) return { count: BigInt(found.primes.length), overCap: false, tooWide: false };
   return { count: null, overCap: false, tooWide: true };
 }
@@ -445,7 +468,7 @@ function censusPrimes(lo: bigint, hi: bigint): PrimeCensus {
  * Counted exactly up to the sieve limit; a long span of powers of two is
  * enough to know the seed cap is exceeded.
  */
-function censusPrimePowers(lo: bigint, hi: bigint): PrimeCensus {
+function censusPrimePowers(lo: bigint, hi: bigint, limit: number): PrimeCensus {
   if (hi < lo || hi < 4n) return NO_PRIMES;
   const start = lo < 4n ? 4n : lo;
   if (start > hi) return NO_PRIMES;
@@ -457,11 +480,11 @@ function censusPrimePowers(lo: bigint, hi: bigint): PrimeCensus {
     const found = scanPrimePowers(start, hi, Number.MAX_SAFE_INTEGER);
     return { count: BigInt(found.powers.length), overCap: false, tooWide: false };
   }
-  if (powersOfTwoInRange(start, hi) > MAX_SEEDS) {
+  if (powersOfTwoInRange(start, hi, limit) > limit) {
     return { count: null, overCap: true, tooWide: false };
   }
-  const found = scanPrimePowers(start, hi, MAX_SEEDS + 1);
-  if (found.powers.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  const found = scanPrimePowers(start, hi, limit + 1);
+  if (found.powers.length > limit) return { count: null, overCap: true, tooWide: false };
   if (found.finished) return { count: BigInt(found.powers.length), overCap: false, tooWide: false };
   return { count: null, overCap: false, tooWide: true };
 }
@@ -496,7 +519,7 @@ function primePowerList(lo: number, hi: number): bigint[] {
   return powers.map((value) => BigInt(value));
 }
 
-function powersOfTwoInRange(lo: bigint, hi: bigint): number {
+function powersOfTwoInRange(lo: bigint, hi: bigint, limit: number): number {
   if (hi < 4n || hi < lo) return 0;
   let value = 4n;
   if (lo > value) {
@@ -506,7 +529,7 @@ function powersOfTwoInRange(lo: bigint, hi: bigint): number {
     if (value < 4n) value = 4n;
   }
   let count = 0;
-  while (value <= hi && count <= MAX_SEEDS + 1) {
+  while (value <= hi && count <= limit + 1) {
     count += 1;
     if (value > hi >> 1n) break;
     value <<= 1n;
@@ -540,7 +563,7 @@ function isPrimePower(n: bigint): boolean {
  * p^k with k odd: primes (k = 1) and higher odd powers such as 8 = 2^3, 27 = 3^3, 32 = 2^5.
  * Squares and other even exponents are not included.
  */
-function censusOddPrimePowers(lo: bigint, hi: bigint): PrimeCensus {
+function censusOddPrimePowers(lo: bigint, hi: bigint, limit: number): PrimeCensus {
   if (hi < lo || hi < 2n) return NO_PRIMES;
   const start = lo < 2n ? 2n : lo;
   if (start > hi) return NO_PRIMES;
@@ -552,17 +575,17 @@ function censusOddPrimePowers(lo: bigint, hi: bigint): PrimeCensus {
     const found = scanMatching(start, hi, Number.MAX_SAFE_INTEGER, isOddPrimePower);
     return { count: BigInt(found.values.length), overCap: false, tooWide: false };
   }
-  if (bertrandLowerBound(start, hi) > MAX_SEEDS) {
+  if (bertrandLowerBound(start, hi, limit) > limit) {
     return { count: null, overCap: true, tooWide: false };
   }
-  const found = scanMatching(start, hi, MAX_SEEDS + 1, isOddPrimePower);
-  if (found.values.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  const found = scanMatching(start, hi, limit + 1, isOddPrimePower);
+  if (found.values.length > limit) return { count: null, overCap: true, tooWide: false };
   if (found.finished) return { count: BigInt(found.values.length), overCap: false, tooWide: false };
   return { count: null, overCap: false, tooWide: true };
 }
 
 /** p^k with odd k ≥ 3. Used to subtract the overlap of a prime-power range and an odd-exponent range. */
-function censusOddHigherPowers(lo: bigint, hi: bigint): PrimeCensus {
+function censusOddHigherPowers(lo: bigint, hi: bigint, limit: number): PrimeCensus {
   if (hi < lo || hi < 8n) return NO_PRIMES;
   const start = lo < 8n ? 8n : lo;
   if (start > hi) return NO_PRIMES;
@@ -574,11 +597,11 @@ function censusOddHigherPowers(lo: bigint, hi: bigint): PrimeCensus {
     const found = scanMatching(start, hi, Number.MAX_SAFE_INTEGER, isOddHigherPrimePower);
     return { count: BigInt(found.values.length), overCap: false, tooWide: false };
   }
-  if (oddPowersOfTwoInRange(start, hi) > MAX_SEEDS) {
+  if (oddPowersOfTwoInRange(start, hi, limit) > limit) {
     return { count: null, overCap: true, tooWide: false };
   }
-  const found = scanMatching(start, hi, MAX_SEEDS + 1, isOddHigherPrimePower);
-  if (found.values.length > MAX_SEEDS) return { count: null, overCap: true, tooWide: false };
+  const found = scanMatching(start, hi, limit + 1, isOddHigherPrimePower);
+  if (found.values.length > limit) return { count: null, overCap: true, tooWide: false };
   if (found.finished) return { count: BigInt(found.values.length), overCap: false, tooWide: false };
   return { count: null, overCap: false, tooWide: true };
 }
@@ -627,7 +650,7 @@ function oddHigherPowerList(lo: number, hi: number): bigint[] {
   return values.map((value) => BigInt(value));
 }
 
-function oddPowersOfTwoInRange(lo: bigint, hi: bigint): number {
+function oddPowersOfTwoInRange(lo: bigint, hi: bigint, limit: number): number {
   if (hi < 8n || hi < lo) return 0;
   let value = 8n;
   if (lo > value) {
@@ -639,7 +662,7 @@ function oddPowersOfTwoInRange(lo: bigint, hi: bigint): number {
     value = 1n << BigInt(exp);
   }
   let count = 0;
-  while (value <= hi && count <= MAX_SEEDS + 1) {
+  while (value <= hi && count <= limit + 1) {
     count += 1;
     if (value > hi >> 2n) break;
     value <<= 2n;
@@ -713,10 +736,10 @@ function powEquals(base: bigint, exp: number, target: bigint): boolean {
 }
 
 /** At least this many primes in [lo, hi], or a smaller under-count. Never over-counts. */
-function bertrandLowerBound(lo: bigint, hi: bigint): number {
+function bertrandLowerBound(lo: bigint, hi: bigint, limit: number): number {
   let m = lo < 2n ? 2n : lo;
   let count = 0;
-  while (count <= MAX_SEEDS && 2n * m - 1n <= hi) {
+  while (count <= limit && 2n * m - 1n <= hi) {
     count += 1;
     m *= 2n;
   }
@@ -728,8 +751,8 @@ function listPrimes(lo: bigint, hi: bigint): bigint[] {
   const start = lo < 2n ? 2n : lo;
   if (start > hi) return [];
   if (hi <= BigInt(PRIME_SIEVE_LIMIT)) return sieveList(Number(start), Number(hi));
-  // Expansion only runs when the distinct total fits the seed cap, so this
-  // window holds at most MAX_SEEDS primes and is short enough to scan.
+  // Expansion only runs when the distinct total fits the active cap, so this
+  // window is short enough to scan.
   return scanPrimes(start, hi, Number.MAX_SAFE_INTEGER, PRIME_SCAN_LIMIT + 2).primes;
 }
 
@@ -909,7 +932,7 @@ function mergedCount(pieces: IntegerPiece[]): bigint {
 /**
  * First-seen order. A range contributes its integers from the lower end to
  * the higher end. A prime range contributes primes the same way. Only called
- * when the distinct count is within {@link MAX_SEEDS}.
+ * when the distinct count is within the active cap.
  */
 function expandInOrder(pieces: Piece[]): { seeds: bigint[]; duplicates: number } {
   const seeds: bigint[] = [];
@@ -955,7 +978,7 @@ function remember(value: bigint, seeds: bigint[], seen: Set<string>): number {
   return 0;
 }
 
-function parseIndividuals(pieces: Piece[], rejected: string[]): ParsedSeeds {
+function parseIndividuals(pieces: Piece[], rejected: string[], limit: number): ParsedSeeds {
   const seeds: bigint[] = [];
   const seen = new Set<string>();
   let duplicates = 0;
@@ -969,7 +992,7 @@ function parseIndividuals(pieces: Piece[], rejected: string[]): ParsedSeeds {
       continue;
     }
     seen.add(key);
-    if (seeds.length >= MAX_SEEDS) {
+    if (seeds.length >= limit) {
       omitted += 1;
       continue;
     }

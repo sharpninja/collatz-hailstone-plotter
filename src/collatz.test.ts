@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hailstone, peakValue } from './collatz';
-import { isOddPrimePower, parseMaxIterations, parseSeeds } from './parse';
+import { MAX_SEEDS, MAX_SEEDS_LIMIT, isOddPrimePower, parseMaxIterations, parseMaxSeeds, parseSeeds } from './parse';
 
 describe('hailstone', () => {
   it('stops immediately at 1', () => {
@@ -68,6 +68,54 @@ describe('parseSeeds', () => {
     expect(parsed.seeds).toHaveLength(12);
     expect(parsed.omitted).toBe(2);
     expect(parsed.overflow).toBeNull();
+  });
+
+  it('expands past 12 seeds when the cap is raised', () => {
+    const blocked = parseSeeds('1..31');
+    expect(blocked.seeds).toEqual([]);
+    expect(blocked.overflow).toBe(31n);
+
+    const allowed = parseSeeds('1..31', 31);
+    expect(allowed.overflow).toBeNull();
+    expect(allowed.seeds).toHaveLength(31);
+    expect(allowed.seeds[0]).toBe(1n);
+    expect(allowed.seeds[30]).toBe(31n);
+
+    const stillOver = parseSeeds('1..40', 31);
+    expect(stillOver.seeds).toEqual([]);
+    expect(stillOver.overflow).toBe(40n);
+
+    const oddBlocked = parseSeeds('oddprimepowers:2..107');
+    expect(oddBlocked.seeds).toEqual([]);
+    expect(oddBlocked.overflow).toBe(31n);
+    expect(oddBlocked.oddPrimePowerOnly).toBe(false);
+
+    const odd = parseSeeds('oddprimepowers:2..107', 31);
+    expect(odd.overflow).toBeNull();
+    expect(odd.overCap).toBe(false);
+    expect(odd.seeds).toHaveLength(31);
+    expect(odd.oddPrimePowerOnly).toBe(true);
+    expect(odd.seeds[0]).toBe(2n);
+    expect(odd.seeds).toContain(8n);
+    expect(odd.seeds).toContain(27n);
+    expect(odd.seeds).toContain(32n);
+    expect(odd.seeds[odd.seeds.length - 1]).toBe(107n);
+    expect(odd.seeds).not.toContain(9n);
+    expect(odd.seeds).not.toContain(25n);
+
+    const individuals = parseSeeds(Array.from({ length: 20 }, (_, i) => String(i + 1)).join(','), 20);
+    expect(individuals.seeds).toHaveLength(20);
+    expect(individuals.omitted).toBe(0);
+    const trimmed = parseSeeds(Array.from({ length: 20 }, (_, i) => String(i + 1)).join(','), 15);
+    expect(trimmed.seeds).toHaveLength(15);
+    expect(trimmed.seeds[0]).toBe(1n);
+    expect(trimmed.seeds[14]).toBe(15n);
+    expect(trimmed.omitted).toBe(5);
+
+    expect(parseSeeds('1..600', MAX_SEEDS_LIMIT + 50).overflow).toBe(600n);
+    expect(parseSeeds('1..600', MAX_SEEDS_LIMIT + 50).seeds).toEqual([]);
+    expect(parseSeeds('primes:1..200', 50).seeds).toHaveLength(46);
+    expect(parseSeeds('primes:1..200').overflow).toBe(46n);
   });
 
   it('expands inclusive ranges in first-seen order', () => {
@@ -411,5 +459,17 @@ describe('parseMaxIterations', () => {
     expect(parseMaxIterations('200001')).toBeNull();
     expect(parseMaxIterations('1.5')).toBeNull();
     expect(parseMaxIterations('')).toBeNull();
+  });
+});
+
+describe('parseMaxSeeds', () => {
+  it('accepts a whole number from 1 through the control limit', () => {
+    expect(parseMaxSeeds(String(MAX_SEEDS))).toBe(MAX_SEEDS);
+    expect(parseMaxSeeds('31')).toBe(31);
+    expect(parseMaxSeeds(String(MAX_SEEDS_LIMIT))).toBe(MAX_SEEDS_LIMIT);
+    expect(parseMaxSeeds('0')).toBeNull();
+    expect(parseMaxSeeds(String(MAX_SEEDS_LIMIT + 1))).toBeNull();
+    expect(parseMaxSeeds('1.5')).toBeNull();
+    expect(parseMaxSeeds('')).toBeNull();
   });
 });

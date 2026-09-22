@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFitPolylines, buildLayout, dataToSvg, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
+import { SERIES_COLORS, buildFitPolylines, buildLayout, dataToSvg, hitTest, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -157,6 +157,15 @@ describe('buildLayout', () => {
     const layout = buildLayout(series, { width: 800, height: 480, logY: false });
     expect(layout.series.map((item) => item.seed)).toEqual([27n, 12n, 19n]);
     expect(new Set(layout.series.map((item) => item.color)).size).toBe(3);
+  });
+
+  it('cycles series colors once there are more seeds than palette entries', () => {
+    const series = Array.from({ length: SERIES_COLORS.length + 1 }, (_, index) => hailstone(BigInt(index + 1), 30));
+    const layout = buildLayout(series, { width: 800, height: 480, logY: false });
+    expect(layout.series).toHaveLength(SERIES_COLORS.length + 1);
+    expect(layout.series[0].color).toBe(SERIES_COLORS[0]);
+    expect(layout.series[SERIES_COLORS.length].color).toBe(SERIES_COLORS[0]);
+    expect(layout.series[1].color).toBe(SERIES_COLORS[1]);
   });
 
   it('reads the sample under the cursor, including the peak of 27', () => {
