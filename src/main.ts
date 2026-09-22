@@ -11,6 +11,7 @@ import {
 } from './chart';
 import { downloadPng, type PngFit } from './export';
 import { fitSeries, type FitResult } from './fit';
+import { parityForm, type ParityForm } from './parity';
 import './style.css';
 import { formatCount, formatExact } from './format';
 import {
@@ -41,13 +42,20 @@ const plotNote = required<HTMLParagraphElement>('plot-note');
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
 const PLOT_NOTE_FIT =
-  'The curve passes through every term. The dashed line is a least-squares fit of those samples, not a closed form. Hover a step to read a term.';
+  'The curve passes through every term. The dashed line is only a visual fit of those samples. The sidebar gives the exact form in N for each seed’s parity pattern. Hover a step to read a term.';
+const PLOT_NOTE_EXACT =
+  'The curve passes through every term. The sidebar gives the exact form in N for this seed’s parity pattern. Hover a step to read a term.';
 
 interface FitOutcome {
   seed: bigint;
   color: string;
   end: number;
+  steps: number;
+  peak: bigint;
+  reachedOne: boolean;
+  stoppedForSize: boolean;
   approximate: boolean;
+  parity: ParityForm;
   result: FitResult;
 }
 
@@ -234,7 +242,12 @@ function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
     seed: trajectory.seed,
     color: SERIES_COLORS[index % SERIES_COLORS.length],
     end: trajectory.values.length - 1,
+    steps: trajectory.values.length - 1,
+    peak: peakValue(trajectory.values),
+    reachedOne: trajectory.reachedOne,
+    stoppedForSize: trajectory.stoppedForSize,
     approximate: exceedsSafeInteger(trajectory.values),
+    parity: parityForm(trajectory.values, trajectory),
     result: fitSeries(trajectory.values, { logSpace }),
   }));
 }
@@ -263,51 +276,95 @@ function renderFitPanel(): void {
     return;
   }
   fitBlock.hidden = false;
-  plotNote.textContent = fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE;
+  plotNote.textContent = fits.some((fit) => fit.result.ok) ? PLOT_NOTE_FIT : PLOT_NOTE_EXACT;
   for (const fit of fits) {
-    const card = document.createElement('article');
-    card.className = 'fit-card';
-    const head = document.createElement('div');
-    head.className = 'fit-head';
-    const swatch = document.createElement('span');
-    swatch.className = 'swatch';
-    swatch.style.background = fit.color;
-    const title = document.createElement('p');
-    title.className = 'legend-seed';
-    title.textContent = formatExact(fit.seed);
-    head.append(swatch, title);
-    card.append(head);
-
-    if (!fit.result.ok) {
-      const message = document.createElement('p');
-      message.className = 'fit-note';
-      message.textContent = fit.result.message;
-      card.append(message);
-      fitResults.append(card);
-      continue;
-    }
-
-    const expression = document.createElement('p');
-    expression.className = 'fit-expr';
-    expression.textContent = fit.result.expression;
-    card.append(expression);
-    if (fit.result.substitution) {
-      const substitution = document.createElement('p');
-      substitution.className = 'fit-sub';
-      substitution.textContent = fit.result.substitution;
-      card.append(substitution);
-    }
-    const summary = document.createElement('p');
-    summary.className = 'fit-summary';
-    summary.textContent = fit.result.summary;
-    const note = document.createElement('p');
-    note.className = 'fit-note';
-    note.textContent = fit.approximate
-      ? `${fit.result.note} Some terms exceed 2^53 − 1, so this uses the same approximate heights as the chart.`
-      : fit.result.note;
-    card.append(summary, note);
-    fitResults.append(card);
+    fitResults.append(renderFitCard(fit));
   }
+  if (fits.length > 1) fitResults.append(renderExplore(fits));
+}
+
+function renderFitCard(fit: FitOutcome): HTMLElement {
+  const card = document.createElement('article');
+  card.className = 'fit-card';
+  const head = document.createElement('div');
+  head.className = 'fit-head';
+  const swatch = document.createElement('span');
+  swatch.className = 'swatch';
+  swatch.style.background = fit.color;
+  const title = document.createElement('p');
+  title.className = 'legend-seed';
+  title.textContent = `N = ${formatExact(fit.seed)}`;
+  head.append(swatch, title);
+  card.append(head, kicker('Exact for this parity pattern', false), paragraph('fit-expr', fit.parity.expression));
+  card.append(paragraph('fit-sub', fit.parity.parameters));
+  if (fit.parity.solvedForSeed) {
+    card.append(paragraph('fit-sub', fit.parity.solvedForSeed));
+    card.append(paragraph('fit-summary', 'Solving for N recovers this starting value.'));
+  }
+  card.append(paragraph('fit-note', fit.parity.note));
+  if (fit.parity.terms && fit.parity.terms.length > 1) {
+    const details = document.createElement('details');
+    details.className = 'fit-terms';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Every term of this parity pattern';
+    const list = document.createElement('pre');
+    list.className = 'fit-term-list';
+    list.textContent = fit.parity.terms.join('\n');
+    details.append(summary, list);
+    card.append(details);
+  } else if (!fit.parity.terms && fit.steps > 0) {
+    card.append(paragraph('fit-note', 'Every term has this shape. Only the last term is written out.'));
+  }
+
+  if (fit.steps < 1) return card;
+  card.append(kicker('Visual fit of the plotted path', true));
+  if (!fit.result.ok) {
+    card.append(paragraph('fit-note', `${fit.result.message} The identity above is still exact for the parity pattern.`));
+    return card;
+  }
+  card.append(paragraph('fit-expr', fit.result.expression));
+  if (fit.result.substitution) card.append(paragraph('fit-sub', fit.result.substitution));
+  card.append(paragraph('fit-summary', fit.result.summary));
+  const visualNote = fit.approximate
+    ? `${fit.result.note} Some terms exceed 2^53 − 1, so this curve uses the same approximate heights as the chart. It is not a function of N.`
+    : `${fit.result.note} This polynomial is a guide for the chart, not a function of N.`;
+  card.append(paragraph('fit-note', visualNote));
+  return card;
+}
+
+function renderExplore(fits: FitOutcome[]): HTMLElement {
+  const block = document.createElement('section');
+  block.className = 'explore';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Across these seeds';
+  const note = document.createElement('p');
+  note.className = 'fit-note';
+  note.textContent =
+    'Exploratory only: stopping time, peak, odd-step count o, and divisions by 2 for the seeds on the chart. This is a way to look for a pattern in N. Nothing here is fitted across seeds, and it is not a proof that every N reaches 1.';
+  const list = document.createElement('ul');
+  list.className = 'explore-list';
+  for (const fit of fits) {
+    const item = document.createElement('li');
+    const status = fit.reachedOne ? `${formatCount(fit.steps)} steps` : fit.stoppedForSize ? `stopped at ${formatCount(fit.steps)} steps` : `capped at ${formatCount(fit.steps)} steps`;
+    item.textContent = `${formatExact(fit.seed)} · ${status} · peak ${formatExact(fit.peak)} · o = ${formatCount(fit.parity.oddSteps)} · e = ${formatCount(fit.parity.divisions)}`;
+    list.append(item);
+  }
+  block.append(heading, note, list);
+  return block;
+}
+
+function kicker(text: string, quiet: boolean): HTMLParagraphElement {
+  const node = document.createElement('p');
+  node.className = quiet ? 'fit-kicker quiet' : 'fit-kicker';
+  node.textContent = text;
+  return node;
+}
+
+function paragraph(className: string, text: string): HTMLParagraphElement {
+  const node = document.createElement('p');
+  node.className = className;
+  node.textContent = text;
+  return node;
 }
 
 function fitKey(series: FitOutcome[] | null): string {

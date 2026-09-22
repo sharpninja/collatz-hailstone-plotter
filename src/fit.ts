@@ -4,7 +4,8 @@
  * Searches polynomials in the iteration, through degree 5, in the same space
  * as the chart: the value itself, or log₁₀ of the value when the log axis is
  * on. BIC picks the degree so a jagged path does not collect extra wiggles.
- * The result approximates the samples. It is not a closed form for Collatz.
+ * The result approximates the samples on the chart. The exact form in the starting
+ * value lives in parity.ts and depends on that seed's parity pattern.
  */
 
 const MAX_DEGREE = 5;

@@ -73,7 +73,7 @@ export function renderPng(trajectories: Trajectory[], logY: boolean, fits: PngFi
   context.fillStyle = muted;
   context.font = '15px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
   const axisNote = logY ? 'logarithmic value axis' : 'linear value axis';
-  const fitNote = fits.length > 0 ? ' Dashed curve: least-squares fit of the samples.' : '';
+  const fitNote = fits.length > 0 ? ' Dashed curve: visual fit of the samples.' : '';
   context.fillText(
     `Stops at 1 · ${axisNote}. The curve passes through every term; bends between them are a guide.${fitNote}`,
     40,
