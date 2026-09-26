@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0e0d0b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hailstone" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <link rel="manifest" href="%BASE_URL%manifest.json" />
+    <link rel="apple-touch-icon" href="%BASE_URL%icons/apple-touch-icon.png" />
     <meta
       name="description"
       content="Plot Collatz hailstone trajectories from one or more starting numbers. A visualizer only — not a proof."
@@ -33,6 +39,10 @@
             <p class="eyebrow">Collatz · 3n+1</p>
             <h1>Hailstone plotter</h1>
           </div>
+        </div>
+        <div class="mast-tools">
+          <button type="button" id="install-app" hidden>Install as app</button>
+          <p id="install-hint" class="install-hint" hidden></p>
         </div>
         <p class="lede">
           Step runs along the horizontal axis and the value of n along the vertical. Each curve follows one starting number until it reaches 1.

@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0e0d0b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hailstone" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <link rel="manifest" href="/collatz-hailstone-plotter/manifest.json" />
+    <link rel="apple-touch-icon" href="/collatz-hailstone-plotter/icons/apple-touch-icon.png" />
     <meta
       name="description"
       content="Plot Collatz hailstone trajectories from one or more starting numbers. A visualizer only — not a proof."
@@ -14,8 +20,8 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23110f0c'/%3E%3Cpath d='M6 23 C10 23 11 9 16 9 C21 9 20 20 26 20' fill='none' stroke='%23e2b657' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"
     />
-    <script type="module" crossorigin src="/collatz-hailstone-plotter/assets/index-CURZMMlx.js"></script>
-    <link rel="stylesheet" crossorigin href="/collatz-hailstone-plotter/assets/index-5yVPxIQf.css">
+    <script type="module" crossorigin src="/collatz-hailstone-plotter/assets/index-Dqiy6Tin.js"></script>
+    <link rel="stylesheet" crossorigin href="/collatz-hailstone-plotter/assets/index-DL3A_YSo.css">
   </head>
   <body>
     <div class="app">
@@ -35,6 +41,10 @@
             <p class="eyebrow">Collatz · 3n+1</p>
             <h1>Hailstone plotter</h1>
           </div>
+        </div>
+        <div class="mast-tools">
+          <button type="button" id="install-app" hidden>Install as app</button>
+          <p id="install-hint" class="install-hint" hidden></p>
         </div>
         <p class="lede">
           Step runs along the horizontal axis and the value of n along the vertical. Each curve follows one starting number until it reaches 1.
