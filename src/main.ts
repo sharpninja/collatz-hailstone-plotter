@@ -26,6 +26,7 @@ import {
   type HoverHit,
 } from './chart';
 import { downloadPng, type PngFit } from './export';
+import { registerAppServiceWorker, watchInstallPrompt } from './install';
 import { fitSeries, type FitResult } from './fit';
 import { groupParityForms, oddPrimePowerParitySummary, parityForm, primeParitySummary, primePowerParitySummary, type ParityForm, type ParityGroup } from './parity';
 import './style.css';
@@ -94,6 +95,8 @@ const playbackRangeLabel = required<HTMLParagraphElement>('playback-range');
 const clearSelectionButton = required<HTMLButtonElement>('clear-selection');
 const levelBar = required<HTMLSpanElement>('level');
 const playerRoot = required<HTMLDivElement>('player');
+const installButton = required<HTMLButtonElement>('install-app');
+const installHint = required<HTMLParagraphElement>('install-hint');
 const player = new TrajectoryPlayer();
 
 const PLAY_HINT =
@@ -362,6 +365,8 @@ observer.observe(plotHost);
 syncIterationLimitField();
 fillInstrumentSelect(rightInstrumentSelect, loadInstrument('hailstone.instrument.right'));
 fillInstrumentSelect(leftInstrumentSelect, loadInstrument('hailstone.instrument.left'));
+watchInstallPrompt(window, { button: installButton, hint: installHint });
+registerAppServiceWorker();
 generate();
 
 function syncIterationLimitField(): void {

@@ -59,11 +59,54 @@ button { cursor: pointer; }
 }
 
 .masthead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
   gap: 12px 32px;
+}
+
+.brand { grid-column: 1; grid-row: 1; }
+
+.lede {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: end;
+}
+
+.mast-tools {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.mast-tools:not(:has(#install-app:not([hidden]), #install-hint:not([hidden]))) {
+  display: none;
+}
+
+#install-app {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 650;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+#install-app:hover:not(:disabled) { background: #ebc56e; }
+
+#install-app:disabled { opacity: 0.45; cursor: default; }
+
+.install-hint {
+  margin: 0;
+  max-width: 16rem;
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .brand {
@@ -672,6 +715,12 @@ input:disabled {
 @media (max-width: 860px) {
   .app { height: auto; padding: 16px; }
   .workspace { grid-template-columns: 1fr; }
+  .masthead { grid-template-columns: 1fr; }
+  .brand, .lede, .mast-tools {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
   .stage, .plot-frame { min-height: 70vw; }
   h1 { font-size: 1.7rem; }
 }
