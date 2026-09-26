@@ -11,6 +11,8 @@ and plots the terms until the value reaches 1. The horizontal axis is iterations
 
 This is a visualizer. It does not prove the Collatz conjecture, which is still open.
 
+The published site is [https://sharpninja.github.io/collatz-hailstone-plotter/](https://sharpninja.github.io/collatz-hailstone-plotter/). Pushes to `main` build the app and deploy that bundle with GitHub Actions. In the repository, set **Settings → Pages → Source** to **GitHub Actions** once so those deploys are published.
+
 ## Run locally
 
 Requires Node.js 20 or newer.
