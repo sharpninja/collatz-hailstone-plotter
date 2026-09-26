@@ -367,10 +367,29 @@ fillInstrumentSelect(rightInstrumentSelect, loadInstrument('hailstone.instrument
 fillInstrumentSelect(leftInstrumentSelect, loadInstrument('hailstone.instrument.left'));
 watchInstallPrompt(window, { button: installButton, hint: installHint });
 registerAppServiceWorker();
+bindAboutNotes();
 generate();
 
 function syncIterationLimitField(): void {
   maxInput.disabled = !limitIterationsInput.checked;
+}
+
+/** Open every note when a header or sidebar link jumps to About, including after the reader has collapsed one. */
+function bindAboutNotes(): void {
+  const about = document.getElementById('about');
+  if (!about) return;
+
+  const open = (): void => {
+    about.querySelectorAll('details').forEach((node) => {
+      if (node instanceof HTMLDetailsElement) node.open = true;
+    });
+  };
+
+  document.querySelectorAll('a[href="#about"]').forEach((link) => {
+    link.addEventListener('click', open);
+  });
+
+  if (window.location.hash === '#about') open();
 }
 
 function generate(): void {
