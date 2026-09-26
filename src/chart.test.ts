@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, nearestBeat, playbackSoloIndex, selectionBandRect, seriesShown, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
+import { SERIES_COLORS, activeBeatStep, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, nearestBeat, playbackSoloIndex, selectionBandRect, seriesShown, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -379,6 +379,37 @@ describe('playback solo', () => {
     const played = layout.series[1].samples[0];
     expect(nearestBeat(layout, played.x, played.y, 24, 1)?.seed).toBe(47n);
     expect(nearestBeat(layout, played.x, played.y, 24, 0)?.seed).not.toBe(47n);
+  });
+
+  it('tracks the latest beat at or before the playhead and restores nothing in the values', () => {
+    const trajectory = hailstone(8n, 20);
+    const values = trajectory.values;
+    expect(values.slice(0, 4)).toEqual([8n, 4n, 2n, 1n]);
+    const before = values.slice();
+    expect(activeBeatStep(values, 0)).toBeNull();
+    expect(activeBeatStep(values, 1)).toBe(0);
+    expect(activeBeatStep(values, 2)).toBe(0);
+    expect(activeBeatStep(values, 3)).toBe(2);
+    expect(activeBeatStep(values, 4)).toBe(2);
+    expect(activeBeatStep(values, 1, { from: 1, to: 3 })).toBeNull();
+    expect(activeBeatStep(values, 2, { from: 1, to: 3 })).toBe(2);
+    expect(activeBeatStep(values, 3, { from: 1, to: 3 })).toBe(2);
+    expect(values).toEqual(before);
+  });
+
+  it('keeps a ranged playhead beat inside that seed’s own steps when paths are aligned', () => {
+    const longer = hailstone(27n, 10_000);
+    const shorter = hailstone(47n, 10_000);
+    const layout = buildLayout([longer, shorter], { width: 800, height: 480, logY: false, align: true });
+    const window = stepsInAxisRange(shorter.values.length - 1, layout.maxStep, true, { start: 40, end: 90 });
+    expect(window).toEqual({ from: 33, to: 83 });
+    const step = activeBeatStep(shorter.values, 12, window);
+    expect(step).not.toBeNull();
+    expect(step!).toBeGreaterThanOrEqual(33);
+    expect(step!).toBeLessThanOrEqual(33 + 11);
+    expect(layout.series[1].samples[step!].beat).toBe(true);
+    expect(layout.series.map((item) => item.seed)).toEqual([27n, 47n]);
+    expect(layout.series[1].samples).toHaveLength(shorter.values.length);
   });
 
   it('keeps a fit attached to its series index when earlier fits are absent', () => {

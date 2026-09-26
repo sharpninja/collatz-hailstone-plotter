@@ -465,6 +465,31 @@ export function seriesShown(index: number, count: number, solo: number | null): 
   return index === solo;
 }
 
+/**
+ * Hailstone index of the beat the playhead is on.
+ * `playStep` is the 1-based frame from the player. 0 means playback has not started.
+ * `window` is the scored slice, inclusive, when Play is limited to a selected range.
+ * The ring stays on the latest odd-exponent prime power at or before the playhead,
+ * and it does not reach back before the slice. The values themselves are not changed.
+ */
+export function activeBeatStep(
+  values: readonly bigint[],
+  playStep: number,
+  window?: { from: number; to: number } | null,
+): number | null {
+  if (!Number.isInteger(playStep) || playStep < 1 || values.length === 0) return null;
+  const last = values.length - 1;
+  const from = window ? Math.max(0, Math.floor(window.from)) : 0;
+  const to = window ? Math.min(last, Math.floor(window.to)) : last;
+  if (from > to || from > last) return null;
+  const at = Math.min(to, from + (playStep - 1));
+  if (at < from) return null;
+  for (let index = at; index >= from; index -= 1) {
+    if (isOddPrimePower(values[index])) return index;
+  }
+  return null;
+}
+
 /** Nearest sample under the cursor, while it is inside the plot frame. */
 export function hitTest(layout: Layout, x: number, y: number, solo: number | null = null): HoverHit | null {
   const { plot, xMax, maxStep } = layout;
@@ -568,7 +593,40 @@ export interface ChartView {
   svg: SVGSVGElement;
   hoverLayer: SVGGElement;
   selectionLayer: SVGGElement;
+  /** Playhead accent for the beat currently being heard. Cleared when playback is idle. */
+  activeBeatLayer: SVGGElement;
   layout: Layout;
+}
+
+export interface ActiveBeat {
+  seriesIndex: number;
+  /** Hailstone index of the odd-exponent prime power under the playhead. */
+  step: number;
+}
+
+/**
+ * Draw or clear the accent on the beat the playhead has reached.
+ * Safe to call whenever that beat changes. Does not touch the trajectory list.
+ */
+export function paintActiveBeat(layer: SVGGElement, layout: Layout, beat: ActiveBeat | null): void {
+  layer.replaceChildren();
+  if (!beat) return;
+  const series = layout.series[beat.seriesIndex];
+  const sample = series?.samples[beat.step];
+  if (!sample?.beat) return;
+  const at = { cx: String(sample.x), cy: String(sample.y) };
+  const group = svgEl('g', {
+    class: 'beat-playhead',
+    'data-beat-series': String(beat.seriesIndex),
+    'data-beat-step': String(sample.step),
+  });
+  group.append(
+    svgEl('circle', { ...at, r: '16', class: 'beat-playhead-pulse', stroke: series.color }),
+    svgEl('circle', { ...at, r: '11.5', class: 'beat-playhead-halo', stroke: '#f4efe6' }),
+    svgEl('circle', { ...at, r: '8.4', class: 'beat-playhead-ring', stroke: series.color }),
+    svgEl('circle', { ...at, r: '3.5', class: 'beat-playhead-core', fill: series.color }),
+  );
+  layer.append(group);
 }
 
 export interface FitPolyline {
@@ -811,10 +869,13 @@ export function renderChart(
   }
   svg.append(markers);
 
+  const activeBeatLayer = svgEl('g', { class: 'active-beat-layer' });
+  svg.append(activeBeatLayer);
+
   const hoverLayer = svgEl('g', { class: 'hover-layer' });
   svg.append(hoverLayer);
   host.append(svg);
-  return { svg, hoverLayer, selectionLayer, layout };
+  return { svg, hoverLayer, selectionLayer, activeBeatLayer, layout };
 }
 
 /** Draw or clear the translucent playback band. Safe to call on every drag move. */

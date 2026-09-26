@@ -10,9 +10,11 @@ import {
 import {
   LEGEND_ROW_LIMIT,
   SERIES_COLORS,
+  activeBeatStep,
   applySeriesSolo,
   buildFitPolylines,
   buildLayout,
+  paintActiveBeat,
   hitTest,
   nearestBeat,
   paintSelection,
@@ -102,7 +104,7 @@ const installHint = required<HTMLParagraphElement>('install-hint');
 const player = new TrajectoryPlayer();
 
 const PLAY_HINT =
-  'Play sounds one seed. While it plays, the chart shows only that trajectory; the other curves return when playback finishes or stops. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
+  'Play sounds one seed. While it plays, the chart shows only that trajectory; the other curves return when playback finishes or stops. The beat the playhead has reached is marked with a brighter pulsing ring, and that ring moves to the next beat as playback advances. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
@@ -148,6 +150,8 @@ let brush: {
 let copyToastTimer = 0;
 /** Series index hidden-around on the chart right now. Null means every curve is shown. */
 let paintedSolo: number | null = null;
+/** Beat ring tracking playback. Null when nothing is sounding. */
+let activeBeat: { seriesIndex: number; step: number } | null = null;
 
 const BRUSH_MIN_PX = 6;
 
@@ -584,6 +588,7 @@ function playerHooks(): { onFrame: (frame: { step: number; steps: number; level:
       const soloNote = trajectories && trajectories.length > 1 ? ' Other curves hidden.' : '';
       playStatus.textContent = `${prefix}Step ${formatCount(frame.step)} of ${formatCount(frame.steps)}.${soloNote}`;
       levelBar.style.width = `${Math.round(frame.level * 100)}%`;
+      rememberActiveBeat(frame.step);
       updateTransportButtons();
     },
     onEnded: () => {
@@ -661,6 +666,35 @@ function hearingSolo(): number | null {
   return playbackSoloIndex(player.state, Number(playSeedSelect.value), trajectories?.length ?? 0);
 }
 
+function playbackWindowFor(trajectory: Trajectory): { from: number; to: number } | null {
+  if (!playbackRange || !view) return null;
+  return stepsInAxisRange(
+    trajectory.values.length - 1,
+    view.layout.maxStep,
+    view.layout.align,
+    playbackRange,
+  );
+}
+
+function rememberActiveBeat(playStep: number): void {
+  const trajectory = selectedTrajectory();
+  const seriesIndex = trajectory && trajectories ? trajectories.indexOf(trajectory) : -1;
+  const step =
+    trajectory && seriesIndex >= 0 && player.state !== 'idle'
+      ? activeBeatStep(trajectory.values, playStep, playbackWindowFor(trajectory))
+      : null;
+  const next = step === null ? null : { seriesIndex, step };
+  if (next?.seriesIndex === activeBeat?.seriesIndex && next?.step === activeBeat?.step) return;
+  activeBeat = next;
+  paintCurrentBeat();
+}
+
+function paintCurrentBeat(): void {
+  if (!view) return;
+  if (player.state === 'idle') activeBeat = null;
+  paintActiveBeat(view.activeBeatLayer, view.layout, activeBeat);
+}
+
 function startPlayback(): void {
   const trajectory = selectedTrajectory();
   if (!trajectory) {
@@ -679,6 +713,7 @@ function startPlayback(): void {
     return;
   }
   player.play(score, readStepMs(), readHands(), playerHooks());
+  rememberActiveBeat(1);
   let detail = '';
   if (score.truncated && playbackRange) {
     detail = ` Playing the first ${formatCount(score.notes.length)} steps of iterations ${formatCount(playbackRange.start)}–${formatCount(playbackRange.end)}.`;
@@ -738,6 +773,7 @@ function syncPlaybackSolo(): void {
     }
   }
   syncLegendSolo(solo);
+  paintCurrentBeat();
 }
 
 function syncLegendSolo(solo: number | null): void {
