@@ -46,6 +46,8 @@ export interface PngFit {
   end: number;
   /** Kept for callers that already pass a peak. Align does not rescale height. */
   peak?: number;
+  /** Index of the plotted seed this fit belongs to. */
+  seriesIndex?: number;
 }
 
 export function renderPng(
@@ -54,6 +56,7 @@ export function renderPng(
   fits: PngFit[] = [],
   align = false,
   markBeats = true,
+  solo: number | null = null,
 ): HTMLCanvasElement {
   const scale = 2;
   const canvas = document.createElement('canvas');
@@ -107,7 +110,7 @@ export function renderPng(
   const overlays: FitPolyline[] = buildFitPolylines(layout, fits);
   context.save();
   context.translate(chartX, chartY);
-  paintChart(context, layout, palette(), overlays, markBeats);
+  paintChart(context, layout, palette(), overlays, markBeats, solo);
   context.restore();
 
   if (legendWidth) {
@@ -117,7 +120,7 @@ export function renderPng(
       text,
       muted,
       accent,
-    });
+    }, solo);
   } else if (trajectories[0]) {
     context.fillStyle = accent;
     context.font = '14px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
@@ -156,6 +159,7 @@ function drawSeedLegend(
   trajectories: Trajectory[],
   colors: string[],
   box: { x: number; y: number; text: string; muted: string; accent: string },
+  solo: number | null = null,
 ): void {
   context.textAlign = 'left';
   context.textBaseline = 'alphabetic';
@@ -174,13 +178,17 @@ function drawSeedLegend(
   if (trajectories.length <= 12) {
     trajectories.forEach((trajectory, index) => {
       const y = originY + index * 54;
+      const dimmed = solo !== null && index !== solo;
+      context.save();
+      context.globalAlpha = dimmed ? 0.35 : 1;
       paintSwatch(context, colors[index] ?? box.accent, box.x, y + 2, 18, 4);
-      context.fillStyle = box.text;
+      context.fillStyle = dimmed ? box.muted : box.text;
       context.font = '14px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
       context.fillText(trimSeed(trajectory.seed), box.x, y + 22);
       context.fillStyle = box.muted;
       context.font = '12px "Segoe UI", "DejaVu Sans", Helvetica, Arial, sans-serif';
       context.fillText(outcome(trajectory), box.x, y + 40);
+      context.restore();
     });
     return;
   }
@@ -195,10 +203,14 @@ function drawSeedLegend(
     const row = index % perColumn;
     const x = box.x + column * COMPACT_COLUMN;
     const y = originY + row * COMPACT_ROW;
+    const dimmed = solo !== null && index !== solo;
+    context.save();
+    context.globalAlpha = dimmed ? 0.35 : 1;
     paintSwatch(context, colors[index] ?? box.accent, x, y + 4, 12, 3);
-    context.fillStyle = box.text;
+    context.fillStyle = dimmed ? box.muted : box.text;
     context.font = '12px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
     context.fillText(trimSeed(trajectories[index].seed), x + 18, y + 12);
+    context.restore();
   }
   if (truncated) {
     const index = shown;
@@ -255,8 +267,9 @@ export function downloadPng(
   fits: PngFit[] = [],
   align = false,
   markBeats = true,
+  solo: number | null = null,
 ): void {
-  const canvas = renderPng(trajectories, logY, fits, align, markBeats);
+  const canvas = renderPng(trajectories, logY, fits, align, markBeats, solo);
   canvas.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);

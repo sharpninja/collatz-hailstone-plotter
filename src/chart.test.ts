@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SERIES_COLORS, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, nearestBeat, selectionBandRect, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
+import { SERIES_COLORS, activeBeatStep, alignedStep, buildFitPolylines, buildLayout, dataToSvg, hitTest, nearestBeat, playbackSoloIndex, selectionBandRect, seriesShown, stepsInAxisRange, svgXToAxis, smoothThrough, type Cubic, type Vec } from './chart';
 import { hailstone } from './collatz';
 
 function at(start: Vec, curve: Cubic, t: number): Vec {
@@ -328,5 +328,101 @@ describe('buildLayout', () => {
     expect(layout.series[0].curves).toHaveLength(0);
     expect(layout.series[0].samples[0].y).toBeGreaterThan(layout.plot.y);
     expect(layout.series[0].samples[0].y).toBeLessThan(layout.plot.y + layout.plot.h);
+  });
+});
+
+describe('playback solo', () => {
+  it('shows only the sounding seed while play is active, including pause, and restores when idle', () => {
+    expect(playbackSoloIndex('starting', 1, 3)).toBe(1);
+    expect(playbackSoloIndex('playing', 0, 4)).toBe(0);
+    expect(playbackSoloIndex('paused', 2, 3)).toBe(2);
+    expect(playbackSoloIndex('idle', 1, 3)).toBeNull();
+    expect(playbackSoloIndex('playing', 0, 1)).toBeNull();
+    expect(playbackSoloIndex('playing', 5, 2)).toBeNull();
+    expect(playbackSoloIndex('playing', -1, 3)).toBeNull();
+    expect(playbackSoloIndex('paused', 1.5, 3)).toBeNull();
+    expect(seriesShown(0, 3, 1)).toBe(false);
+    expect(seriesShown(1, 3, 1)).toBe(true);
+    expect(seriesShown(2, 3, null)).toBe(true);
+    expect(seriesShown(0, 3, 9)).toBe(true);
+  });
+
+  it('hides other curves in hover and beat hits without removing seeds', () => {
+    const seeds = [27n, 12n, 19n];
+    const series = seeds.map((seed) => hailstone(seed, 1000));
+    const layout = buildLayout(series, { width: 800, height: 480, logY: false });
+    const origin = layout.series[0].samples[0];
+    expect(hitTest(layout, origin.x, origin.y)?.entries.map((entry) => entry.seed)).toEqual(seeds);
+    expect(hitTest(layout, origin.x, origin.y, 1)?.entries.map((entry) => entry.seed)).toEqual([12n]);
+    expect(hitTest(layout, origin.x, origin.y, null)?.entries).toHaveLength(3);
+    expect(hitTest(layout, origin.x, origin.y, 9)?.entries).toHaveLength(3);
+    expect(layout.series.map((item) => item.seed)).toEqual(seeds);
+
+    const beat = layout.series[0].samples[0];
+    expect(beat.beat).toBe(true);
+    expect(nearestBeat(layout, beat.x, beat.y, 8)?.seed).toBe(27n);
+    expect(nearestBeat(layout, beat.x, beat.y, 8, 0)?.seed).toBe(27n);
+    expect(nearestBeat(layout, beat.x, beat.y, 8, 1)).toBeNull();
+  });
+
+  it('keeps the solo on an aligned chart and on a shared end step', () => {
+    const layout = buildLayout([hailstone(27n, 10_000), hailstone(47n, 10_000)], {
+      width: 800,
+      height: 480,
+      logY: false,
+      align: true,
+    });
+    const end = layout.series[0].samples.at(-1)!;
+    expect(hitTest(layout, end.x, end.y)?.entries.map((entry) => entry.seed)).toEqual([27n, 47n]);
+    expect(hitTest(layout, end.x, end.y, 1)?.entries.map((entry) => entry.seed)).toEqual([47n]);
+    expect(layout.series).toHaveLength(2);
+    const played = layout.series[1].samples[0];
+    expect(nearestBeat(layout, played.x, played.y, 24, 1)?.seed).toBe(47n);
+    expect(nearestBeat(layout, played.x, played.y, 24, 0)?.seed).not.toBe(47n);
+  });
+
+  it('tracks the latest beat at or before the playhead and restores nothing in the values', () => {
+    const trajectory = hailstone(8n, 20);
+    const values = trajectory.values;
+    expect(values.slice(0, 4)).toEqual([8n, 4n, 2n, 1n]);
+    const before = values.slice();
+    expect(activeBeatStep(values, 0)).toBeNull();
+    expect(activeBeatStep(values, 1)).toBe(0);
+    expect(activeBeatStep(values, 2)).toBe(0);
+    expect(activeBeatStep(values, 3)).toBe(2);
+    expect(activeBeatStep(values, 4)).toBe(2);
+    expect(activeBeatStep(values, 1, { from: 1, to: 3 })).toBeNull();
+    expect(activeBeatStep(values, 2, { from: 1, to: 3 })).toBe(2);
+    expect(activeBeatStep(values, 3, { from: 1, to: 3 })).toBe(2);
+    expect(values).toEqual(before);
+  });
+
+  it('keeps a ranged playhead beat inside that seed’s own steps when paths are aligned', () => {
+    const longer = hailstone(27n, 10_000);
+    const shorter = hailstone(47n, 10_000);
+    const layout = buildLayout([longer, shorter], { width: 800, height: 480, logY: false, align: true });
+    const window = stepsInAxisRange(shorter.values.length - 1, layout.maxStep, true, { start: 40, end: 90 });
+    expect(window).toEqual({ from: 33, to: 83 });
+    const step = activeBeatStep(shorter.values, 12, window);
+    expect(step).not.toBeNull();
+    expect(step!).toBeGreaterThanOrEqual(33);
+    expect(step!).toBeLessThanOrEqual(33 + 11);
+    expect(layout.series[1].samples[step!].beat).toBe(true);
+    expect(layout.series.map((item) => item.seed)).toEqual([27n, 47n]);
+    expect(layout.series[1].samples).toHaveLength(shorter.values.length);
+  });
+
+  it('keeps a fit attached to its series index when earlier fits are absent', () => {
+    const layout = buildLayout([hailstone(8n, 100), hailstone(27n, 10_000)], {
+      width: 800,
+      height: 480,
+      logY: false,
+    });
+    const [line] = buildFitPolylines(layout, [
+      { color: '#e07a5f', predict: () => 40, start: 0, end: 10, seriesIndex: 1 },
+    ]);
+    expect(line.seriesIndex).toBe(1);
+    expect(seriesShown(line.seriesIndex, layout.series.length, 0)).toBe(false);
+    expect(seriesShown(line.seriesIndex, layout.series.length, 1)).toBe(true);
   });
 });

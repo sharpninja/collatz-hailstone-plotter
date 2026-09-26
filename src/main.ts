@@ -10,11 +10,15 @@ import {
 import {
   LEGEND_ROW_LIMIT,
   SERIES_COLORS,
+  activeBeatStep,
+  applySeriesSolo,
   buildFitPolylines,
   buildLayout,
+  paintActiveBeat,
   hitTest,
   nearestBeat,
   paintSelection,
+  playbackSoloIndex,
   pointInPlot,
   renderChart,
   renderHover,
@@ -100,7 +104,7 @@ const installHint = required<HTMLParagraphElement>('install-hint');
 const player = new TrajectoryPlayer();
 
 const PLAY_HINT =
-  'Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
+  'Play sounds one seed. While it plays, the chart shows only that trajectory; the other curves return when playback finishes or stops. The beat the playhead has reached is marked with a brighter pulsing ring, and that ring moves to the next beat as playback advances. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
@@ -144,6 +148,10 @@ let brush: {
   beat: BeatHit | null;
 } | null = null;
 let copyToastTimer = 0;
+/** Series index hidden-around on the chart right now. Null means every curve is shown. */
+let paintedSolo: number | null = null;
+/** Beat ring tracking playback. Null when nothing is sounding. */
+let activeBeat: { seriesIndex: number; step: number } | null = null;
 
 const BRUSH_MIN_PX = 6;
 
@@ -175,7 +183,14 @@ beatsInput.addEventListener('change', () => {
 
 downloadButton.addEventListener('click', () => {
   if (!trajectories || trajectories.length === 0) return;
-  downloadPng(trajectories, logInput.checked, pngFits(fits), alignInput.checked, beatsInput.checked);
+  downloadPng(
+    trajectories,
+    logInput.checked,
+    pngFits(fits),
+    alignInput.checked,
+    beatsInput.checked,
+    hearingSolo(),
+  );
 });
 
 fitButton.addEventListener('click', () => {
@@ -277,7 +292,7 @@ plotHost.addEventListener('pointerdown', (event) => {
     if (playbackRange || brush) clearPlaybackRange();
     return;
   }
-  const beat = beatsInput.checked ? nearestBeat(view.layout, point.x, point.y, beatHitRadius(view.svg)) : null;
+  const beat = beatsInput.checked ? nearestBeat(view.layout, point.x, point.y, beatHitRadius(view.svg), hearingSolo()) : null;
   brush = {
     pointerId: event.pointerId,
     originAxis: svgXToAxis(view.layout, point.x),
@@ -318,9 +333,9 @@ plotHost.addEventListener('pointermove', (event) => {
     hideTooltip();
     return;
   }
-  const beatHover = beatsInput.checked && nearestBeat(view.layout, point.x, point.y, beatHitRadius(view.svg));
+  const beatHover = beatsInput.checked && nearestBeat(view.layout, point.x, point.y, beatHitRadius(view.svg), hearingSolo());
   plotHost.classList.toggle('is-beat', Boolean(beatHover));
-  const hit = hitTest(view.layout, point.x, point.y);
+  const hit = hitTest(view.layout, point.x, point.y, hearingSolo());
   renderHover(view.hoverLayer, view.layout, hit);
   if (!hit) {
     hideTooltip();
@@ -570,8 +585,10 @@ function playerHooks(): { onFrame: (frame: { step: number; steps: number; level:
     onFrame: (frame) => {
       const trajectory = selectedTrajectory();
       const prefix = trajectory ? `${formatExact(trajectory.seed)} · ` : '';
-      playStatus.textContent = `${prefix}Step ${formatCount(frame.step)} of ${formatCount(frame.steps)}.`;
+      const soloNote = trajectories && trajectories.length > 1 ? ' Other curves hidden.' : '';
+      playStatus.textContent = `${prefix}Step ${formatCount(frame.step)} of ${formatCount(frame.steps)}.${soloNote}`;
       levelBar.style.width = `${Math.round(frame.level * 100)}%`;
+      rememberActiveBeat(frame.step);
       updateTransportButtons();
     },
     onEnded: () => {
@@ -645,19 +662,58 @@ function scoreForPlayback(trajectory: Trajectory): Score | null {
   return score.notes.length === 0 ? null : score;
 }
 
+function hearingSolo(): number | null {
+  return playbackSoloIndex(player.state, Number(playSeedSelect.value), trajectories?.length ?? 0);
+}
+
+function playbackWindowFor(trajectory: Trajectory): { from: number; to: number } | null {
+  if (!playbackRange || !view) return null;
+  return stepsInAxisRange(
+    trajectory.values.length - 1,
+    view.layout.maxStep,
+    view.layout.align,
+    playbackRange,
+  );
+}
+
+function rememberActiveBeat(playStep: number): void {
+  const trajectory = selectedTrajectory();
+  const seriesIndex = trajectory && trajectories ? trajectories.indexOf(trajectory) : -1;
+  const step =
+    trajectory && seriesIndex >= 0 && player.state !== 'idle'
+      ? activeBeatStep(trajectory.values, playStep, playbackWindowFor(trajectory))
+      : null;
+  const next = step === null ? null : { seriesIndex, step };
+  if (next?.seriesIndex === activeBeat?.seriesIndex && next?.step === activeBeat?.step) return;
+  activeBeat = next;
+  paintCurrentBeat();
+}
+
+function paintCurrentBeat(): void {
+  if (!view) return;
+  if (player.state === 'idle') activeBeat = null;
+  paintActiveBeat(view.activeBeatLayer, view.layout, activeBeat);
+}
+
 function startPlayback(): void {
   const trajectory = selectedTrajectory();
-  if (!trajectory) return;
+  if (!trajectory) {
+    syncPlaybackSolo();
+    return;
+  }
   if (!rightHandInput.checked && !leftHandInput.checked) {
     playStatus.textContent = 'Turn on the right hand, the left hand, or both.';
+    syncPlaybackSolo();
     return;
   }
   const score = scoreForPlayback(trajectory);
   if (!score) {
     playStatus.textContent = `Nothing in that range for ${formatExact(trajectory.seed)}.`;
+    syncPlaybackSolo();
     return;
   }
   player.play(score, readStepMs(), readHands(), playerHooks());
+  rememberActiveBeat(1);
   let detail = '';
   if (score.truncated && playbackRange) {
     detail = ` Playing the first ${formatCount(score.notes.length)} steps of iterations ${formatCount(playbackRange.start)}–${formatCount(playbackRange.end)}.`;
@@ -666,7 +722,9 @@ function startPlayback(): void {
   } else if (playbackRange) {
     detail = ` Iterations ${formatCount(playbackRange.start)}–${formatCount(playbackRange.end)}.`;
   }
-  playStatus.textContent = `Playing ${formatExact(trajectory.seed)}.${detail}`;
+  const soloNote =
+    trajectories && trajectories.length > 1 ? ' Other curves are hidden until playback stops.' : '';
+  playStatus.textContent = `Playing ${formatExact(trajectory.seed)}.${detail}${soloNote}`;
   syncTransport();
 }
 
@@ -695,6 +753,47 @@ function syncTransport(): void {
     playSeedSelect.value = previous;
   }
   if (!busy) playStatus.textContent = PLAY_HINT;
+  syncPlaybackSolo();
+}
+
+/**
+ * While a seed is sounding, paint only that curve. Stop, cancel, and the
+ * natural end all leave the player idle, which puts the other curves back.
+ * Pause stays in a non-idle state, so the solo holds. Seeds are not removed.
+ */
+function syncPlaybackSolo(): void {
+  const solo = hearingSolo();
+  const changed = solo !== paintedSolo;
+  paintedSolo = solo;
+  if (view) {
+    applySeriesSolo(view.svg, solo);
+    if (changed) {
+      renderHover(view.hoverLayer, view.layout, null);
+      hideTooltip();
+    }
+  }
+  syncLegendSolo(solo);
+  paintCurrentBeat();
+}
+
+function syncLegendSolo(solo: number | null): void {
+  legend.querySelectorAll<HTMLElement>('.legend-row').forEach((row) => {
+    const index = Number(row.dataset.series);
+    const muted = solo !== null && index !== solo;
+    const heard = solo !== null && index === solo;
+    row.classList.toggle('is-muted', muted);
+    row.classList.toggle('is-heard', heard);
+    if (muted) row.title = 'Hidden while another seed is playing';
+    else if (heard) row.title = 'This seed is playing';
+    else row.removeAttribute('title');
+  });
+  const note = legend.querySelector<HTMLElement>('.legend-summary-note');
+  if (!note || !trajectories || trajectories.length <= LEGEND_ROW_LIMIT) return;
+  if (solo !== null && trajectories[solo]) {
+    note.textContent = `Hearing ${formatExact(trajectories[solo].seed)}. Other curves are hidden until playback stops. Colors repeat after the twelfth curve.`;
+  } else {
+    note.textContent = 'Every seed is drawn. Colors repeat after the twelfth curve.';
+  }
 }
 
 function abandonPlot(): void {
@@ -763,7 +862,10 @@ function render(): void {
   const height = Math.floor(plotHost.clientHeight);
   if (width < 40 || height < 40) return;
   const key = `${width}x${height}|${logInput.checked ? 1 : 0}|${alignInput.checked ? 1 : 0}|${beatsInput.checked ? 1 : 0}|${seriesKey(trajectories)}|${fitKey(fits)}`;
-  if (key === paintedKey && view) return;
+  if (key === paintedKey && view) {
+    syncPlaybackSolo();
+    return;
+  }
   paintedKey = key;
   hideTooltip();
   emptyState.hidden = true;
@@ -778,6 +880,7 @@ function render(): void {
     : statusLine(trajectories);
   view = renderChart(plotHost, layout, summary, buildFitPolylines(layout, pngFits(fits)), beatsInput.checked);
   applySelectionBand();
+  syncPlaybackSolo();
 }
 
 function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
@@ -798,7 +901,8 @@ function computeFits(series: Trajectory[], logSpace: boolean): FitOutcome[] {
 function pngFits(series: FitOutcome[] | null): PngFit[] {
   if (!series) return [];
   const overlays: PngFit[] = [];
-  for (const fit of series) {
+  for (let index = 0; index < series.length; index++) {
+    const fit = series[index];
     if (!fit.result.ok) continue;
     overlays.push({
       color: fit.color,
@@ -806,6 +910,7 @@ function pngFits(series: FitOutcome[] | null): PngFit[] {
       start: 0,
       end: fit.end,
       peak: Number(fit.peak),
+      seriesIndex: index,
     });
   }
   return overlays;
@@ -1110,7 +1215,7 @@ function renderLegend(series: Trajectory[] | null): void {
     summary.className = 'legend-summary';
     summary.textContent = `${formatCount(series.length)} seeds`;
     const note = document.createElement('p');
-    note.className = 'legend-empty';
+    note.className = 'legend-empty legend-summary-note';
     note.textContent = 'Every seed is drawn. Colors repeat after the twelfth curve.';
     legend.append(summary, note);
     return;
@@ -1118,6 +1223,7 @@ function renderLegend(series: Trajectory[] | null): void {
   series.forEach((trajectory, index) => {
     const row = document.createElement('article');
     row.className = 'legend-row';
+    row.dataset.series = String(index);
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
     swatch.style.background = SERIES_COLORS[index % SERIES_COLORS.length];
