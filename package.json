@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "pages": "npm run build && rm -rf docs && cp -R dist docs",
     "preview": "vite preview",
     "test": "vitest run"
   },
