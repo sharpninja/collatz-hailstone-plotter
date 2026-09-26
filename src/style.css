@@ -135,6 +135,19 @@ h1 {
   line-height: 1.1;
 }
 
+.about-jump {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(226, 182, 87, 0.45);
+}
+
+.about-jump:hover { border-bottom-color: var(--accent); }
+
 h2 {
   margin: 0 0 10px;
   font-size: 1.15rem;
@@ -422,6 +435,103 @@ input:disabled {
 
 .about p { margin: 0 0 10px; font-size: 0.92rem; }
 .about p:last-child { margin-bottom: 0; }
+.about a { color: var(--accent); }
+
+.notes {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 22px 8px;
+  scroll-margin: 12px;
+}
+
+.notes-head { margin-bottom: 4px; }
+
+.notes-lead {
+  margin: 0 0 8px;
+  max-width: 44rem;
+  color: var(--muted);
+}
+
+.note { border-top: 1px solid var(--line); }
+
+.note summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  padding: 12px 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 500;
+  list-style: none;
+}
+
+.note summary::-webkit-details-marker { display: none; }
+.note summary::marker { content: ""; }
+
+.note summary::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.5px solid var(--accent);
+  border-bottom: 1.5px solid var(--accent);
+  transform: rotate(-45deg);
+  flex: none;
+  align-self: center;
+}
+
+.note[open] summary::before { transform: rotate(45deg); }
+
+.note-tag {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.note-body {
+  max-width: 44rem;
+  padding: 0 0 16px 1.15rem;
+}
+
+.note-body p,
+.note-body li { color: var(--muted); }
+
+.note-body p { margin: 0 0 10px; }
+
+.note-body h3 {
+  margin: 16px 0 6px;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.note-body h3:first-of-type { margin-top: 4px; }
+
+.note-body ul {
+  margin: 0 0 10px;
+  padding-left: 1.15rem;
+}
+
+.note-body li { margin: 0 0 4px; }
+
+.note-body code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  color: var(--accent);
+}
+
+.note-body strong { color: var(--text); font-weight: 650; }
+
+.note-kicker {
+  color: var(--faint);
+  font-size: 0.86rem;
+}
 
 .stage { min-width: 0; min-height: 520px; display: flex; }
 
@@ -708,7 +818,15 @@ input:disabled {
 }
 
 @media (min-width: 960px) {
-  .app { height: 100vh; }
+  .app {
+    height: 100vh;
+    overflow: auto;
+  }
+  .workspace {
+    flex: none;
+    height: calc(100vh - 8.5rem);
+    min-height: 520px;
+  }
   .panel { overflow: auto; }
 }
 

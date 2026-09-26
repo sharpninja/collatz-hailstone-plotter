@@ -20,8 +20,8 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23110f0c'/%3E%3Cpath d='M6 23 C10 23 11 9 16 9 C21 9 20 20 26 20' fill='none' stroke='%23e2b657' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"
     />
-    <script type="module" crossorigin src="/collatz-hailstone-plotter/assets/index-Dqiy6Tin.js"></script>
-    <link rel="stylesheet" crossorigin href="/collatz-hailstone-plotter/assets/index-DL3A_YSo.css">
+    <script type="module" crossorigin src="/collatz-hailstone-plotter/assets/index-B29WvyEo.js"></script>
+    <link rel="stylesheet" crossorigin href="/collatz-hailstone-plotter/assets/index-D29HpWuw.css">
   </head>
   <body>
     <div class="app">
@@ -40,6 +40,7 @@
           <div>
             <p class="eyebrow">Collatz · 3n+1</p>
             <h1>Hailstone plotter</h1>
+            <a class="about-jump" href="#about">About 3n+1</a>
           </div>
         </div>
         <div class="mast-tools">
@@ -142,10 +143,11 @@
             <div id="legend" class="legend"></div>
           </section>
 
-          <section class="about" aria-labelledby="about-heading">
-            <h2 id="about-heading">About the sequence</h2>
+          <section class="about" aria-labelledby="sidebar-about-heading">
+            <h2 id="sidebar-about-heading">About the sequence</h2>
             <p>If n is even, the next term is n / 2. If n is odd, the next term is 3n + 1. These plots follow that rule until the value is 1. The cycle 4 → 2 → 1 is not repeated.</p>
             <p>The Collatz conjecture says every positive integer eventually reaches 1. It is still unproved. This page only draws the paths you enter.</p>
+            <p><a href="#about">About 3n+1</a> is the longer note: the map, the open problem, and working notes on seeds, shared peaks, and hearing a path.</p>
           </section>
         </aside>
 
@@ -197,6 +199,65 @@
           </div>
         </section>
       </div>
+
+      <section id="about" class="notes" aria-labelledby="about-heading" tabindex="-1">
+        <div class="notes-head">
+          <h2 id="about-heading">About 3n+1</h2>
+        </div>
+        <p class="notes-lead">What the hailstone map is, why the conjecture is still open, and working notes from Payton (sharpninja).</p>
+
+        <details class="note" open>
+          <summary>What 3n+1 is</summary>
+          <div class="note-body">
+            <p>The Collatz map, also called the hailstone map, is a rule for a positive integer n.</p>
+            <ul>
+              <li>If n is even, n goes to n / 2.</li>
+              <li>If n is odd, n goes to 3n + 1.</li>
+            </ul>
+            <p>Iterate that step. The values form a trajectory, a hailstone: the number rises and falls. This plotter draws the value against the step. It can also play a trajectory as sound.</p>
+            <p>Each curve stops when the value reaches 1. The cycle 4 → 2 → 1 is not drawn again and again.</p>
+          </div>
+        </details>
+
+        <details class="note" open>
+          <summary>The problem</summary>
+          <div class="note-body">
+            <p>The Collatz conjecture says every positive integer eventually reaches the cycle 4 → 2 → 1. Equivalently, every positive integer eventually reaches 1.</p>
+            <p>The conjecture has been checked for enormous ranges of n. It remains an <strong>open problem</strong>. There is no known proof that it holds for every positive integer.</p>
+            <p>This app is a visualizer and an explorer. <strong>It is not a proof.</strong></p>
+          </div>
+        </details>
+
+        <details class="note" open>
+          <summary>Observations <span class="note-tag">working notes, not theorems</span></summary>
+          <div class="note-body">
+            <p class="note-kicker">Observations from Payton (sharpninja). A way of looking at paths in this plotter. Not theorems, and not a proof of the conjecture.</p>
+
+            <h3>Stress-test seeds</h3>
+            <p>Trajectories that feel hardest, or most interesting to watch, often start at a prime power with an odd exponent: p<sup>k</sup> where k is odd. That includes the primes themselves (k = 1) and cubes such as 27 = 3³. Even exponents are a milder class in this framing, such as 9 = 3² and 25 = 5².</p>
+            <p>The seed syntax <code>oddprimepowers:</code> and <code>ppodd:</code> targets that set. Try <code>oddprimepowers:8..32</code>.</p>
+
+            <h3>Shared peaks</h3>
+            <p>The seeds 27, 31, 41, and 47 all reach the famous peak 9,232. They do because 41, then 31, then 47 already sit on 27’s path. The first value those four seeds share is 47.</p>
+            <p>Turn on <strong>Align</strong>, or read <strong>First common value</strong> after Generate, to explore where paths merge.</p>
+
+            <h3>Music, as a two-hand reading</h3>
+            <p class="note-kicker">Figurative. A way to hear a log-style view. Not a theorem.</p>
+            <ul>
+              <li>A visit to a prime power with an odd exponent reads as a <strong>beat</strong> — the right hand.</li>
+              <li>The stretch of divisions by 2 between those beats reads as <strong>oscillation</strong> — the left hand.</li>
+              <li>A phrase is a chain of tension that releases into the next tension.</li>
+              <li><strong>Rest</strong> is landing on a power of two, then descending 4 → 2 → 1.</li>
+            </ul>
+            <p>The shape of that phrase is inspired by Beethoven’s Für Elise. That is a program note, not mathematics. The tones the player uses are original figures, not a quotation.</p>
+
+            <h3>A note on meaning</h3>
+            <p class="note-kicker">Figurative.</p>
+            <p>There are infinitely many choices of starting N: many ways to enter. The shared rule is a grammar. What follows is the consequence along the path, and then a rest.</p>
+            <p>That is a metaphor for reading a trajectory. It does not say that the Collatz problem proves anything about a political or economic system.</p>
+          </div>
+        </details>
+      </section>
     </div>
   </body>
 </html>
