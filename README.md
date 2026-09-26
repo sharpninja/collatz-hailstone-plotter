@@ -11,7 +11,15 @@ and plots the terms until the value reaches 1. The horizontal axis is iterations
 
 This is a visualizer. It does not prove the Collatz conjecture, which is still open.
 
-The published site is [https://sharpninja.github.io/collatz-hailstone-plotter/](https://sharpninja.github.io/collatz-hailstone-plotter/). Pushes to `main` build the app and deploy that bundle with GitHub Actions. In the repository, set **Settings → Pages → Source** to **GitHub Actions** once so those deploys are published.
+The published site is [https://sharpninja.github.io/collatz-hailstone-plotter/](https://sharpninja.github.io/collatz-hailstone-plotter/). GitHub Actions cannot run on this account (billing lock), so the site is not deployed by a workflow. The live files are the committed `docs/` folder on `main`. In the repository, set **Settings → Pages → Build and deployment → Source** to **Deploy from a branch**, branch **main**, folder **/docs**.
+
+Publishing means rebuilding into `docs/` and pushing that folder to `main`:
+
+```bash
+npm run pages
+```
+
+That typechecks, writes the production bundle, and replaces `docs/` with `dist/`. Commit `docs/` (including every file under `docs/assets/`) and push to `main`. Vite's `base` is `/collatz-hailstone-plotter/`, so `docs/index.html` loads scripts and styles from `/collatz-hailstone-plotter/assets/…`. The build also writes `docs/.nojekyll` so Pages serves those files as-is.
 
 ## Run locally
 
@@ -28,6 +36,7 @@ Other scripts:
 ```bash
 npm test          # sequence, parsing, and curve checks
 npm run build     # typecheck and production bundle
+npm run pages     # rebuild docs/ for GitHub Pages (no Actions)
 npm run preview   # serve the production bundle
 ```
 
@@ -65,3 +74,4 @@ Sequences are computed with arbitrary-size integers. A term past 2^53 − 1 is s
 - `src/export.ts` — PNG download
 - `src/sonify.ts` — two-voice piano score and Web Audio playback
 - `src/main.ts` — the page controls
+- `docs/` — production bundle committed for GitHub Pages (`npm run pages`)

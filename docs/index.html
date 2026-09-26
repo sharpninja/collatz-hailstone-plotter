@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e0d0b" />
+    <meta
+      name="description"
+      content="Plot Collatz hailstone trajectories from one or more starting numbers. A visualizer only — not a proof."
+    />
+    <title>Hailstone plotter</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23110f0c'/%3E%3Cpath d='M6 23 C10 23 11 9 16 9 C21 9 20 20 26 20' fill='none' stroke='%23e2b657' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <script type="module" crossorigin src="/collatz-hailstone-plotter/assets/index-CURZMMlx.js"></script>
+    <link rel="stylesheet" crossorigin href="/collatz-hailstone-plotter/assets/index-5yVPxIQf.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 36 36" aria-hidden="true">
+            <rect width="36" height="36" rx="10" fill="#1c1914" />
+            <path
+              d="M7 26 C12 26 13 10 18 10 C23 10 22 22 29 22"
+              fill="none"
+              stroke="#e2b657"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <div>
+            <p class="eyebrow">Collatz · 3n+1</p>
+            <h1>Hailstone plotter</h1>
+          </div>
+        </div>
+        <p class="lede">
+          Step runs along the horizontal axis and the value of n along the vertical. Each curve follows one starting number until it reaches 1.
+        </p>
+      </header>
+
+      <div class="workspace">
+        <aside class="panel">
+          <form id="controls">
+            <div class="field">
+              <label for="seeds">Starting values</label>
+              <textarea
+                id="seeds"
+                rows="3"
+                spellcheck="false"
+                autocapitalize="off"
+                placeholder="e.g. 27, 20..27, or primes:20..30"
+              >27</textarea>
+              <p class="hint">Positive integers, commas, or spaces. 20..27 is every integer. primes:20..30 is primes only. oddprimepowers:8..32 keeps prime powers with an odd exponent (primes, and 27 = 3³), a stress-test sample. Max seeds to plot starts at 12; raise it for a larger range.</p>
+            </div>
+
+            <div class="examples" role="group" aria-label="Examples">
+              <button type="button" data-example="27" data-log="off">27</button>
+              <button type="button" data-example="20..27" data-log="on">20..27</button>
+              <button type="button" data-example="primes:20..50" data-log="on">primes:20..50</button>
+              <button type="button" data-example="oddprimepowers:8..32" data-log="on">oddprimepowers:8..32</button>
+              <button type="button" data-example="25, 26, 27" data-log="on">25, 26, 27</button>
+              <button type="button" data-example="12, 19, 27" data-log="on">12, 19, 27</button>
+            </div>
+
+            <label class="check" for="limit-iterations">
+              <input id="limit-iterations" type="checkbox" checked />
+              <span>Limit max iterations</span>
+            </label>
+            <div class="field">
+              <label for="max-steps">Max iterations</label>
+              <input id="max-steps" type="number" inputmode="numeric" min="1" max="200000" step="1" value="10000" />
+              <p class="hint">On by default. A run stops at 1, or after this many steps (up to 200,000). Turn the limit off to follow each seed to 1; the number is then ignored. An emergency stop at 10,000,000 steps still applies, and the page warns only if a seed hits it. With the limit on, every seed shares a 500,000-step budget.</p>
+            </div>
+
+            <div class="field">
+              <label for="max-seeds">Max seeds to plot</label>
+              <input id="max-seeds" type="number" inputmode="numeric" min="1" max="50000" step="1" value="12" />
+              <p class="hint">Default 12. Raise this to plot a larger range, up to 50,000 — for example 1..768. Above 2,000 the page warns that drawing will be slow. More curves share the 500,000-step budget and take longer to draw. Colors repeat after the twelfth curve. Past 30 seeds the trajectory list collapses to a count. The Hearing menu lists every plotted seed.</p>
+            </div>
+
+            <label class="check" for="log-scale">
+              <input id="log-scale" type="checkbox" />
+              <span>Logarithmic value axis</span>
+            </label>
+
+            <label class="check" for="align-plots">
+              <input id="align-plots" type="checkbox" />
+              <span>Align</span>
+            </label>
+            <p class="hint">Align: all paths end together at 1 (shorter seeds start later on the axis). Off keeps every seed starting at 0.</p>
+
+            <label class="check" for="mark-beats">
+              <input id="mark-beats" type="checkbox" checked />
+              <span>Mark beats</span>
+            </label>
+            <p class="hint">Rings mark terms that are prime powers with an odd exponent. Click a ring to copy that value. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
+
+            <div class="actions">
+              <button type="submit" class="primary" id="generate">Generate</button>
+              <button type="button" id="fit" disabled>Identify function</button>
+              <button type="button" id="download" disabled>Download PNG</button>
+              <button type="button" id="clear">Clear</button>
+            </div>
+            <div id="form-message" class="message" aria-live="polite"></div>
+          </form>
+
+          <section id="common-block" class="common-block" hidden aria-labelledby="common-heading">
+            <h2 id="common-heading">First common value</h2>
+            <p id="common-value" class="common-value"></p>
+            <p id="common-note" class="hint"></p>
+          </section>
+
+          <section id="fit-block" class="fit-block" hidden aria-labelledby="fit-heading">
+            <h2 id="fit-heading">Function of N</h2>
+            <p class="hint">
+              Each path has an exact form in its starting value N, fixed by the parity pattern that run actually took: every term is (3^o · N + m) / 2^e. The pattern depends on N, so this is exact for these seeds and is not a proof for every starting value. The dashed curve is only a visual fit of the plotted samples.
+            </p>
+            <div id="fit-results" class="fit-results" aria-live="polite"></div>
+          </section>
+
+          <section id="patterns-block" class="patterns-block" hidden aria-labelledby="patterns-heading">
+            <h2 id="patterns-heading">Distinct functions</h2>
+            <p id="patterns-note" class="hint"></p>
+            <div id="patterns" class="patterns"></div>
+          </section>
+
+          <section class="legend-block" aria-labelledby="legend-heading">
+            <h2 id="legend-heading">Trajectories</h2>
+            <div id="legend" class="legend"></div>
+          </section>
+
+          <section class="about" aria-labelledby="about-heading">
+            <h2 id="about-heading">About the sequence</h2>
+            <p>If n is even, the next term is n / 2. If n is odd, the next term is 3n + 1. These plots follow that rule until the value is 1. The cycle 4 → 2 → 1 is not repeated.</p>
+            <p>The Collatz conjecture says every positive integer eventually reaches 1. It is still unproved. This page only draws the paths you enter.</p>
+          </section>
+        </aside>
+
+        <section class="stage" aria-label="Chart">
+          <div class="plot-card">
+            <div class="plot-frame">
+              <div id="empty" class="empty">
+                <p class="empty-title">No trajectory yet</p>
+                <p>Enter a starting number and press Generate. 27 is a classic seed: the path climbs to 9,232, then falls to 1.</p>
+              </div>
+              <div id="plot-host" class="plot-host"></div>
+              <div id="tooltip" class="tooltip" hidden aria-hidden="true"></div>
+              <p id="copy-toast" class="copy-toast" role="status" hidden></p>
+            </div>
+            <div class="player" id="player">
+              <div class="player-row">
+                <button type="button" id="play" disabled>Play</button>
+                <button type="button" id="pause-audio" disabled>Pause</button>
+                <button type="button" id="stop-audio" disabled>Stop</button>
+                <label class="player-field" for="step-ms">ms/step
+                  <input id="step-ms" type="number" inputmode="numeric" min="40" max="600" step="10" value="140" />
+                </label>
+                <label class="check" for="hand-right">
+                  <input id="hand-right" type="checkbox" checked />
+                  <span>Right hand</span>
+                </label>
+                <label class="player-field instrument" for="instrument-right">Right hand instrument
+                  <select id="instrument-right"></select>
+                </label>
+                <label class="check" for="hand-left">
+                  <input id="hand-left" type="checkbox" checked />
+                  <span>Left hand</span>
+                </label>
+                <label class="player-field instrument" for="instrument-left">Left hand instrument
+                  <select id="instrument-left"></select>
+                </label>
+                <label class="player-field" for="play-seed">Hearing
+                  <select id="play-seed"></select>
+                </label>
+              </div>
+              <div class="player-range">
+                <p id="playback-range" class="hint">Playback: full path</p>
+                <button type="button" id="clear-selection" disabled>Clear selection</button>
+              </div>
+              <div class="meter" aria-hidden="true"><span id="level"></span></div>
+              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward. Each hand has its own instrument, and both start as piano. The line rests only on the final powers of 2. Original figures, exploratory, not a proof.</p>
+            </div>
+            <p id="plot-note" class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>
