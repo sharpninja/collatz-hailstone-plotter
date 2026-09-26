@@ -445,8 +445,28 @@ export interface HoverHit {
   }>;
 }
 
+export type PlaybackActivity = 'idle' | 'starting' | 'playing' | 'paused';
+
+/**
+ * Series to draw alone while a seed is sounding.
+ * Idle, stop, and a finished performance return null so every curve comes back.
+ * One seed, or an index outside the list, also shows every curve.
+ * The trajectory list itself is unchanged; this is only which index to paint.
+ */
+export function playbackSoloIndex(state: PlaybackActivity, seedIndex: number, seedCount: number): number | null {
+  if (state === 'idle' || seedCount < 2) return null;
+  if (!Number.isInteger(seedIndex) || seedIndex < 0 || seedIndex >= seedCount) return null;
+  return seedIndex;
+}
+
+/** True when this series should be painted. A null solo shows every series. An out-of-range solo does too. */
+export function seriesShown(index: number, count: number, solo: number | null): boolean {
+  if (solo === null || !Number.isInteger(solo) || solo < 0 || solo >= count) return true;
+  return index === solo;
+}
+
 /** Nearest sample under the cursor, while it is inside the plot frame. */
-export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
+export function hitTest(layout: Layout, x: number, y: number, solo: number | null = null): HoverHit | null {
   const { plot, xMax, maxStep } = layout;
   if (x < plot.x || x > plot.x + plot.w || y < plot.y || y > plot.y + plot.h) return null;
   if (maxStep < 0 || layout.series.length === 0) return null;
@@ -462,7 +482,9 @@ export function hitTest(layout: Layout, x: number, y: number): HoverHit | null {
   if (Math.abs(sampleX - x) > threshold) return null;
 
   const entries: HoverHit['entries'] = [];
-  for (const series of layout.series) {
+  for (let seriesIndex = 0; seriesIndex < layout.series.length; seriesIndex++) {
+    if (!seriesShown(seriesIndex, layout.series.length, solo)) continue;
+    const series = layout.series[seriesIndex];
     const index = layout.align ? axis - (layout.maxStep - series.steps) : axis;
     const sample = series.samples[index];
     if (!sample) continue;
@@ -491,10 +513,18 @@ export interface BeatHit {
 }
 
 /** Nearest odd-exponent prime-power ring inside `radius` (SVG pixels). */
-export function nearestBeat(layout: Layout, x: number, y: number, radius: number): BeatHit | null {
+export function nearestBeat(
+  layout: Layout,
+  x: number,
+  y: number,
+  radius: number,
+  solo: number | null = null,
+): BeatHit | null {
   if (radius < 0) return null;
   let best: BeatHit | null = null;
-  for (const series of layout.series) {
+  for (let seriesIndex = 0; seriesIndex < layout.series.length; seriesIndex++) {
+    if (!seriesShown(seriesIndex, layout.series.length, solo)) continue;
+    const series = layout.series[seriesIndex];
     for (const sample of series.samples) {
       if (!sample.beat) continue;
       const distance = Math.hypot(sample.x - x, sample.y - y);
@@ -543,6 +573,8 @@ export interface ChartView {
 
 export interface FitPolyline {
   color: string;
+  /** Index into the plotted series. Used to hide this fit while another seed is playing. */
+  seriesIndex: number;
   /** Null entries break the stroke, so a non-positive log prediction does not jump. */
   points: Array<{ x: number; y: number } | null>;
 }
@@ -565,15 +597,22 @@ export function dataToSvg(
 /** Sample a fitted value function densely enough to read as a smooth dashed curve. */
 export function buildFitPolylines(
   layout: Layout,
-  fits: Array<{ color: string; predict: (iteration: number) => number; start: number; end: number; peak?: number }>,
+  fits: Array<{
+    color: string;
+    predict: (iteration: number) => number;
+    start: number;
+    end: number;
+    peak?: number;
+    seriesIndex?: number;
+  }>,
 ): FitPolyline[] {
-  return fits.map((fit) => {
+  return fits.map((fit, index) => {
     const span = Math.max(0, fit.end - fit.start);
     const count = span <= 240 ? Math.max(2, Math.ceil(span * 2)) : 480;
     const norm = layout.align ? { steps: fit.end } : undefined;
     const points: FitPolyline['points'] = [];
-    for (let index = 0; index <= count; index++) {
-      const iteration = fit.start + (span * index) / count;
+    for (let step = 0; step <= count; step++) {
+      const iteration = fit.start + (span * step) / count;
       const value = fit.predict(iteration);
       if (!Number.isFinite(value) || (layout.logY && value <= 0)) {
         points.push(null);
@@ -581,7 +620,7 @@ export function buildFitPolylines(
       }
       points.push(dataToSvg(layout, iteration, value, norm));
     }
-    return { color: fit.color, points };
+    return { color: fit.color, seriesIndex: fit.seriesIndex ?? index, points };
   });
 }
 
@@ -711,7 +750,7 @@ export function renderChart(
     const series = layout.series[index];
     const path = seriesPath(series);
     if (!path) continue;
-    const group = svgEl('g', { class: 'series' });
+    const group = svgEl('g', { class: 'series', 'data-series': String(index) });
     if (series.curves.length > 0) {
       group.append(
         svgEl('path', {
@@ -733,11 +772,15 @@ export function renderChart(
 
   const markers = svgEl('g', { class: 'markers' });
   if (!dense) {
-    for (const series of layout.series) {
+    const dots = svgEl('g', { class: 'sample-markers' });
+    const beats = svgEl('g', { class: 'beat-markers' });
+    for (let index = 0; index < layout.series.length; index++) {
+      const series = layout.series[index];
+      const dotGroup = svgEl('g', { class: 'series-markers', 'data-series': String(index) });
       for (const sample of series.samples) {
         if (!showSampleDot(sample, series.samples.length)) continue;
         const radius = sample.peak ? '4.2' : sample.start || sample.end ? '3.2' : '2.15';
-        markers.append(
+        dotGroup.append(
           svgEl('circle', {
             cx: String(sample.x),
             cy: String(sample.y),
@@ -747,10 +790,12 @@ export function renderChart(
           }),
         );
       }
+      dots.append(dotGroup);
       if (!markBeats) continue;
+      const beatGroup = svgEl('g', { class: 'series-beats', 'data-series': String(index) });
       for (const sample of series.samples) {
         if (!sample.beat) continue;
-        markers.append(
+        beatGroup.append(
           svgEl('circle', {
             cx: String(sample.x),
             cy: String(sample.y),
@@ -760,7 +805,9 @@ export function renderChart(
           }),
         );
       }
+      beats.append(beatGroup);
     }
+    markers.append(dots, beats);
   }
   svg.append(markers);
 
@@ -818,6 +865,7 @@ export function paintChart(
   palette: ChartPalette,
   fits: FitPolyline[] = [],
   markBeats = true,
+  solo: number | null = null,
 ): void {
   const { plot } = layout;
   ctx.save();
@@ -881,6 +929,7 @@ export function paintChart(
   ctx.lineCap = 'round';
   const dense = layout.series.length > DENSE_SERIES;
   for (let index = layout.series.length - 1; index >= 0; index--) {
+    if (!seriesShown(index, layout.series.length, solo)) continue;
     const series = layout.series[index];
     const first = series.samples[0];
     if (!first || series.curves.length === 0) continue;
@@ -896,11 +945,17 @@ export function paintChart(
     ctx.lineWidth = dense ? 1.15 : 2.25;
     ctx.stroke();
   }
-  paintFits(ctx, fits, palette.plot);
+  paintFits(
+    ctx,
+    fits.filter((fit) => seriesShown(fit.seriesIndex, layout.series.length, solo)),
+    palette.plot,
+  );
   ctx.restore();
 
   if (!dense) {
-    for (const series of layout.series) {
+    for (let index = 0; index < layout.series.length; index++) {
+      if (!seriesShown(index, layout.series.length, solo)) continue;
+      const series = layout.series[index];
       for (const sample of series.samples) {
         if (!showSampleDot(sample, series.samples.length)) continue;
         ctx.beginPath();
@@ -927,13 +982,31 @@ function fitLayer(fits: FitPolyline[]): SVGGElement {
   for (const fit of fits) {
     const path = polylinePath(fit.points);
     if (!path) continue;
-    layer.append(
+    const group = svgEl('g', { class: 'fit-curve', 'data-series': String(fit.seriesIndex) });
+    group.append(
       svgEl('path', { d: path, class: 'fit-halo' }),
       svgEl('path', { d: path, class: 'fit-line', stroke: fit.color }),
       svgEl('path', { d: path, class: 'fit-stitch' }),
     );
+    layer.append(group);
   }
   return layer;
+}
+
+/**
+ * Hide every tagged curve except `solo`, or show them all when `solo` is null.
+ * Seed data stays put; this only toggles paint for the current performance.
+ */
+export function applySeriesSolo(svg: SVGSVGElement, solo: number | null): void {
+  const active = solo !== null;
+  svg.classList.toggle('is-solo', active);
+  for (const node of svg.querySelectorAll<SVGElement>('[data-series]')) {
+    const index = Number(node.getAttribute('data-series'));
+    const muted = active && index !== solo;
+    node.classList.toggle('is-muted', muted);
+    if (muted) node.setAttribute('visibility', 'hidden');
+    else node.removeAttribute('visibility');
+  }
 }
 
 function polylinePath(points: Array<{ x: number; y: number } | null>): string {

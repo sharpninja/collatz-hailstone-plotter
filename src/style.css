@@ -413,6 +413,10 @@ input:disabled {
 
 .legend-row:last-child { border-bottom: 0; padding-bottom: 0; }
 
+.legend-row.is-muted { opacity: 0.38; }
+
+.legend-row.is-heard .legend-seed { color: var(--accent); }
+
 .swatch {
   width: 14px;
   height: 4px;
@@ -728,6 +732,10 @@ input:disabled {
 
 .chart-many .series-line { stroke-width: 1.15; stroke-opacity: 0.55; }
 .chart-many .series-glow { stroke-width: 2.5; stroke-opacity: 0.08; }
+
+.chart.is-solo [data-series].is-muted {
+  visibility: hidden;
+}
 
 .legend-summary {
   margin: 0;
