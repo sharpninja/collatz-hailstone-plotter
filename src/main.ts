@@ -104,7 +104,7 @@ const installHint = required<HTMLParagraphElement>('install-hint');
 const player = new TrajectoryPlayer();
 
 const PLAY_HINT =
-  'Play sounds one seed. While it plays, the chart shows only that trajectory; the other curves return when playback finishes or stops. The beat the playhead has reached is marked with a brighter pulsing ring, and that ring moves to the next beat as playback advances. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6. Original figures, exploratory, not a proof.';
+  'Play sounds one seed. While it plays, the chart shows only that trajectory; the other curves return when playback finishes or stops. The beat the playhead has reached is marked with a brighter pulsing ring, and that ring moves to the next beat as playback advances. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward: a low note, a fifth above it, then the pitch. Each hand has its own instrument, and both start as piano. Each climb swells and each partial descent eases before the next swell. The line rests only when a descent reaches a power of 2 and walks down through 4 → 2 → 1. Pitch follows log₂ of the value on a C-major pentatonic from C2 to C6.';
 
 const PLOT_NOTE =
   'The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.';
