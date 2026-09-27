@@ -546,12 +546,6 @@ input:disabled {
   line-height: 1.6;
 }
 
-.note-body.credo p:first-child {
-  font-size: 1.35rem;
-  line-height: 1.35;
-  margin-bottom: 14px;
-}
-
 .stage { min-width: 0; min-height: 520px; display: flex; }
 
 .plot-card {
