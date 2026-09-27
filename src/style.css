@@ -532,9 +532,24 @@ input:disabled {
 
 .note-body strong { color: var(--text); font-weight: 650; }
 
+.note-body a { color: var(--accent); }
+
 .note-kicker {
   color: var(--faint);
   font-size: 0.86rem;
+}
+
+.note-callout {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--warn);
+  background: rgba(231, 201, 138, 0.08);
+  border-radius: 0 8px 8px 0;
+}
+
+.note-callout p {
+  margin: 0;
+  color: var(--text);
 }
 
 .stage { min-width: 0; min-height: 520px; display: flex; }

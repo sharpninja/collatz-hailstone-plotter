@@ -404,7 +404,17 @@ function bindAboutNotes(): void {
     link.addEventListener('click', open);
   });
 
+  const meaning = document.getElementById('meaning');
+  document.querySelectorAll('a[href="#meaning"]').forEach((link) => {
+    link.addEventListener('click', () => {
+      if (meaning instanceof HTMLDetailsElement) meaning.open = true;
+    });
+  });
+
   if (window.location.hash === '#about') open();
+  if (window.location.hash === '#meaning' && meaning instanceof HTMLDetailsElement) {
+    meaning.open = true;
+  }
 }
 
 function generate(): void {
