@@ -539,17 +539,17 @@ input:disabled {
   font-size: 0.86rem;
 }
 
-.note-callout {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-left: 2px solid var(--warn);
-  background: rgba(231, 201, 138, 0.08);
-  border-radius: 0 8px 8px 0;
+.note-body.credo p {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 1.06rem;
+  line-height: 1.6;
 }
 
-.note-callout p {
-  margin: 0;
-  color: var(--text);
+.note-body.credo p:first-child {
+  font-size: 1.35rem;
+  line-height: 1.35;
+  margin-bottom: 14px;
 }
 
 .stage { min-width: 0; min-height: 520px; display: flex; }

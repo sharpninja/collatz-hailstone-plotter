@@ -13,7 +13,7 @@
     <link rel="apple-touch-icon" href="%BASE_URL%icons/apple-touch-icon.png" />
     <meta
       name="description"
-      content="Plot Collatz hailstone trajectories from one or more starting numbers. A visualizer only — not a proof."
+      content="Plot Collatz hailstone trajectories from one or more starting numbers."
     />
     <title>Hailstone plotter</title>
     <link
@@ -105,7 +105,7 @@
               <input id="mark-beats" type="checkbox" checked />
               <span>Mark beats</span>
             </label>
-            <p class="hint">Rings mark terms that are prime powers with an odd exponent. Click a ring to copy that value. The terms between those rings are the rest of the path. This is a way to read the curve, not a proof.</p>
+            <p class="hint">Rings mark terms that are prime powers with an odd exponent. Click a ring to copy that value. The terms between those rings are the rest of the path.</p>
 
             <div class="actions">
               <button type="submit" class="primary" id="generate">Generate</button>
@@ -144,8 +144,8 @@
           <section class="about" aria-labelledby="sidebar-about-heading">
             <h2 id="sidebar-about-heading">About the sequence</h2>
             <p>If n is even, the next term is n / 2. If n is odd, the next term is 3n + 1. These plots follow that rule until the value is 1. The cycle 4 → 2 → 1 is not repeated.</p>
-            <p>The Collatz conjecture says every positive integer eventually reaches 1. It is still unproved. This page only draws the paths you enter.</p>
-            <p><a href="#about">About 3n+1</a> is the longer note: the map, the open problem, working notes on seeds, shared peaks, and hearing a path, and a figurative reading of meaning.</p>
+            <p>The Collatz conjecture says every positive integer eventually reaches 1. This page draws the paths you enter.</p>
+            <p><a href="#about">About 3n+1</a> is the longer note: the map, the problem, and the meaning of the path.</p>
           </section>
         </aside>
 
@@ -191,7 +191,7 @@
                 <button type="button" id="clear-selection" disabled>Clear selection</button>
               </div>
               <div class="meter" aria-hidden="true"><span id="level"></span></div>
-              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. While it plays, only that curve is shown; the others return when playback finishes or stops. The current beat is marked with a brighter ring. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward. Each hand has its own instrument, and both start as piano. The line rests only on the final powers of 2. Original figures, exploratory, not a proof.</p>
+              <p id="play-status" class="hint" aria-live="polite">Play sounds one seed. While it plays, only that curve is shown; the others return when playback finishes or stops. The current beat is marked with a brighter ring. The right hand states each odd-exponent prime power on the beat. The left hand rolls the other terms afterward. Each hand has its own instrument, and both start as piano. The line rests only on the final powers of 2.</p>
             </div>
             <p id="plot-note" class="plot-note">The curve passes through every term. Hover a step to read it. Only those terms are Collatz values — the bend between them is a guide.</p>
           </div>
@@ -202,7 +202,7 @@
         <div class="notes-head">
           <h2 id="about-heading">About 3n+1</h2>
         </div>
-        <p class="notes-lead">What the hailstone map is, why the conjecture is still open, working notes from Payton (sharpninja), and a figurative reading of what a path means to him.</p>
+        <p class="notes-lead">The map, the problem, and the meaning of 3n+1. From Payton (sharpninja).</p>
 
         <details class="note" open>
           <summary>What 3n+1 is</summary>
@@ -221,74 +221,43 @@
           <summary>The problem</summary>
           <div class="note-body">
             <p>The Collatz conjecture says every positive integer eventually reaches the cycle 4 → 2 → 1. Equivalently, every positive integer eventually reaches 1.</p>
-            <p>The conjecture has been checked for enormous ranges of n. It remains an <strong>open problem</strong>. There is no known proof that it holds for every positive integer.</p>
-            <p>This app is a visualizer and an explorer. <strong>It is not a proof.</strong></p>
+            <p>The conjecture has been checked for enormous ranges of n. The mathematical Collatz conjecture remains unproven.</p>
           </div>
         </details>
 
         <details class="note" open>
-          <summary>Observations <span class="note-tag">working notes, not theorems</span></summary>
+          <summary>Observations</summary>
           <div class="note-body">
-            <p class="note-kicker">Observations from Payton (sharpninja). A way of looking at paths in this plotter. Not theorems, and not a proof of the conjecture.</p>
-
             <h3>Stress-test seeds</h3>
-            <p>Trajectories that feel hardest, or most interesting to watch, often start at a prime power with an odd exponent: p<sup>k</sup> where k is odd. That includes the primes themselves (k = 1) and cubes such as 27 = 3³. Even exponents are a milder class in this framing, such as 9 = 3² and 25 = 5².</p>
+            <p>Trajectories that feel hardest, or most interesting to watch, often start at a prime power with an odd exponent: p<sup>k</sup> where k is odd. That includes the primes themselves (k = 1) and cubes such as 27 = 3³. Even exponents are a milder class, such as 9 = 3² and 25 = 5².</p>
             <p>The seed syntax <code>oddprimepowers:</code> and <code>ppodd:</code> targets that set. Try <code>oddprimepowers:8..32</code>.</p>
 
             <h3>Shared peaks</h3>
             <p>The seeds 27, 31, 41, and 47 all reach the famous peak 9,232. They do because 41, then 31, then 47 already sit on 27’s path. The first value those four seeds share is 47.</p>
-            <p>Turn on <strong>Align</strong>, or read <strong>First common value</strong> after Generate, to explore where paths merge.</p>
+            <p>Turn on <strong>Align</strong>, or read <strong>First common value</strong> after Generate, to see where paths merge.</p>
 
             <h3>Music, as a two-hand reading</h3>
-            <p class="note-kicker">Figurative. A way to hear a log-style view. Not a theorem.</p>
             <ul>
-              <li>A visit to a prime power with an odd exponent reads as a <strong>beat</strong> — the right hand.</li>
-              <li>The stretch of divisions by 2 between those beats reads as <strong>oscillation</strong> — the left hand.</li>
+              <li>A visit to a prime power with an odd exponent is a <strong>beat</strong> — the right hand.</li>
+              <li>The stretch of divisions by 2 between those beats is <strong>oscillation</strong> — the left hand.</li>
               <li>A phrase is a chain of tension that releases into the next tension.</li>
               <li><strong>Rest</strong> is landing on a power of two, then descending 4 → 2 → 1.</li>
             </ul>
-            <p>The shape of that phrase is inspired by Beethoven’s Für Elise. That is a program note, not mathematics. The tones the player uses are original figures, not a quotation.</p>
-
-            <h3>A note on meaning</h3>
-            <p class="note-kicker">Figurative. The longer reading is the next section.</p>
-            <p>There are infinitely many choices of starting N: many ways to enter. The shared rule is a grammar. What follows is the consequence along the path, and then a rest.</p>
-            <p>That is a metaphor for reading a trajectory. It does not say that the Collatz problem proves anything about a political or economic system. The fuller note is <a href="#meaning">Meaning (author’s reading)</a>.</p>
+            <p>The player states that reading in original figures, chained as Für Elise chains a phrase: tension released into the next tension, until rest.</p>
           </div>
         </details>
 
         <details class="note" id="meaning" open>
-          <summary>Meaning (author’s reading) <span class="note-tag">figurative program notes, not theorems</span></summary>
-          <div class="note-body">
-            <p class="note-kicker">A reading by Payton (sharpninja). A life metaphor, and program notes for this plotter. Not theorems. Not a proof of Collatz. Not a proof of any political system.</p>
-
-            <h3>Consequence, then rest</h3>
-            <p>Figuratively, and as the author’s life metaphor, 3n+1 is consequence and then rest. The odd step, 3n + 1, is the consequence. The halvings that follow are the settling. Infinite variety of starting N is free will in this reading: any entry into a shared grammar. The rule is the same for whoever enters. The number you begin with is the choice.</p>
-
-            <h3>The journey is the reward</h3>
-            <p>The journey is the reward, not the destination. In the mythos every path ends at rest, at 1. Meaning lives in the energy-over-time (hailstone) curve of consequence before that rest is mandatory. The plot is that curve.</p>
-
-            <h3>An anchor of parallels</h3>
-            <p>The author holds these pictures side by side. Music always decays to nothing. Life always decays to nothing. Gravity always wins. Entropy always clusters. And, as a mythos axiom, 3n+1 always reaches 1.</p>
-            <div class="note-callout">
-              <p><strong>Disclaimer.</strong> The first four are figurative or physical readings. Collatz “always → 1” is still the <strong>open conjecture</strong> in mathematics. A mythos axiom is not a proven theorem. This page does not claim the conjecture is settled.</p>
-            </div>
-
-            <h3>Music must resolve</h3>
-            <p>Unresolved music feels unfinished. In this language that maps to a path cut off before the power-of-two rest, the descent 4 → 2 → 1. Read that with care. It is meaning-language. It is not a judgment that a short real life is a “failed orbit.” A life that ends sooner is not a broken sequence.</p>
-
-            <h3>Recursive moments</h3>
-            <p>The author reads reality as recursive. Each resolution is a moment. Some moments weigh more, and all of them mean something. The hailstone plot is energy over time, and that energy is consequence.</p>
-
-            <h3>Gravity and entropy, as a picture</h3>
-            <p>There is a Collatz-like feeling of inevitability toward rest. The path feeds on tension and disorder until rest arrives. Free choice of N, one shared attractor, and the messy beats and phrases are the fuel. This is not literal thermodynamics. It is a picture, not a physical law taken from the map.</p>
-
-            <h3>Für Elise, phrase after phrase</h3>
-            <p>It is not one tension and then rest. It is a sequence of tension builds, each releasing into the next. Final rest comes only when a release lands on a power of two, and then 4 → 2 → 1. The player’s two hands sketch that texture briefly: the right hand states each odd-exponent prime power as a beat, and the left hand rolls what sits between. The phrase-shape is inspired by Beethoven’s Für Elise. The tones are original figures, not a quotation. This remains a program note.</p>
-
-            <h3>Entry points</h3>
-            <p class="note-kicker">The author’s social reading. Opinion, not mathematics.</p>
-            <p>Flattening the allowed starting points — forcing the same N on everyone — collapses the variety of trajectories. The author reads that as authority or bureaucracy narrowing the ways in. Collatz does not mathematically prove capitalism, communism, or any other -ism.</p>
-            <p>Payton’s preference, as opinion only: sustained, earned consequence, a path allowed to climb and fall under the shared rule, is worth more than a start that has been flattened. That is a preference about the metaphor. It is not a theorem.</p>
+          <summary>Meaning</summary>
+          <div class="note-body credo">
+            <p>3n+1 is the meaning of life.</p>
+            <p>Free will is infinite N. You choose where to enter. What follows is consequence along the path, and then rest.</p>
+            <p>The journey is the reward. The curve drawn here is energy against time — each climb, each fall, the time it took. The 1 at the end is the place the path is allowed to stop. The life is the line that got there.</p>
+            <p>Music, life, gravity, entropy, and 3n+1 are the same decay. All of them spend themselves toward rest. Music must resolve. The cadence is what makes the phrase music. Rest is what makes the life complete. A hailstone finishes when it lands on a power of two.</p>
+            <p>The moments are recursive. Beethoven’s Für Elise is that chain made audible: a phrase of tension released into the next phrase of tension, and the next, until the line is required to come home. Inside every climb the same figure is already happening. Rise, spend, ease. The next rise is born from what the last one gave up.</p>
+            <p>Gravity feeds on entropy. The fall is the meal. Division by two is that feeding. The odd step, 3n+1, is the will that lifts again, so there is more for gravity to eat. Rest comes when nothing remains to lift: a power of two, then 4 → 2 → 1, and the tone is permitted to stop.</p>
+            <p>Entry is free will. Bureaucracy is the flattening of entry: one door, one form, one permitted N, and the path belongs to no one. Infinite N is the refusal. You choose the beginning. The rule carries the consequence. Rest meets every path that finishes.</p>
+            <p>A short life is not a failed orbit.</p>
           </div>
         </details>
       </section>
