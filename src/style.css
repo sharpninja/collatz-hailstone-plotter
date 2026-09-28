@@ -500,10 +500,14 @@ input:disabled {
 .note-body {
   max-width: 44rem;
   padding: 0 0 16px 1.15rem;
+  font-weight: 400;
 }
 
 .note-body p,
-.note-body li { color: var(--muted); }
+.note-body li {
+  color: var(--muted);
+  font-weight: 400;
+}
 
 .note-body p { margin: 0 0 10px; }
 
@@ -511,7 +515,7 @@ input:disabled {
   margin: 16px 0 6px;
   font-family: var(--serif);
   font-size: 1.02rem;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text);
 }
 
@@ -530,7 +534,11 @@ input:disabled {
   color: var(--accent);
 }
 
-.note-body strong { color: var(--text); font-weight: 650; }
+.note-body strong,
+.note-body b {
+  color: inherit;
+  font-weight: 400;
+}
 
 .note-body a { color: var(--accent); }
 
